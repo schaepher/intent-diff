@@ -1,0 +1,7 @@
+.tmp/
+/intent-review
+/codeintel-review
+node_modules/
+.cc-connect/
+/bin/
+node_modules

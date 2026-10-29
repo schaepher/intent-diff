@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="intent-review">
+<title>{{.Title}} · 意图评审</title>
+<style>{{.CSS}}</style>
+</head>
+<body data-large-mode="{{if .LargeMode}}1{{else}}0{{end}}" data-total-lines="{{.TotalLines}}">
+<button class="nav-toggle" type="button" aria-label="切换链菜单" aria-controls="sidebar">☰</button>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">意图评审</div>
+    <div class="doc-title">{{.Title}}</div>
+    <nav class="chain-list" aria-label="意图链">
+      {{range $ci, $c := .Chains}}
+      <button class="chain-item{{if eq $ci 0}} is-active{{end}}" type="button" data-chain="{{$c.ID}}"{{if eq $ci 0}} aria-current="true"{{end}}>
+        <span class="chain-title">{{$c.Title}}</span>
+        <span class="chain-meta">{{len $c.Intents}} 个意图 · <code>{{$c.ID}}</code></span>
+      </button>
+      {{end}}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="foot-row"><span class="foot-label">base</span><code>{{.BaseCommit}}</code></div>
+      <div class="foot-row"><span class="foot-label">head</span><code>{{.HeadRef}}</code></div>
+      <div class="foot-row foot-hint">← → 切换意图</div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    {{range $ci, $c := .Chains}}
+    <section class="chain" data-chain-section="{{$c.ID}}"{{if ne $ci 0}} hidden{{end}}>
+      <nav class="intent-timeline" aria-label="意图状态机" data-timeline="{{$c.ID}}">
+        <div class="timeline-head">
+          <span class="timeline-chain">{{$c.Title}}</span>
+          {{if $.LargeMode}}<span class="large-badge" title="总变更行数超过 --max-lines，意图内容默认折叠">大型评审</span>{{end}}
+        </div>
+        <div class="timeline-scroll">
+          <ol class="timeline-track">
+            {{range $ii, $in := $c.Intents}}
+            <li class="timeline-node{{if eq $ii 0}} is-active{{end}}{{if $in.HasWarning}} has-warning{{end}}" data-intent="{{$in.ID}}"{{if $in.WarnTitle}} title="{{$in.WarnTitle}}"{{end}}>
+              <button class="node-btn" type="button"{{if eq $ii 0}} aria-current="step"{{end}}>
+                <span class="node-index">{{$in.Number}}</span>
+                <span class="node-label">{{$in.Title}}</span>
+                {{if $in.HasWarning}}<span class="node-warn" aria-hidden="true">⚠</span>{{end}}
+              </button>
+            </li>
+            {{end}}
+          </ol>
+        </div>
+      </nav>
+
+      <div class="intent-panels">
+        {{range $ii, $in := $c.Intents}}
+        <article class="intent-panel" id="panel-{{$ci}}-{{$ii}}" data-panel data-chain="{{$c.ID}}" data-intent="{{$in.ID}}"{{if ne $ii 0}} hidden{{end}}>
+          <header class="intent-head">
+            <div class="intent-kicker">Intent {{$in.Number}} / {{$in.Total}}</div>
+            <h1 class="intent-title">{{$in.Title}}</h1>
+            <p class="intent-summary">{{$in.Summary}}</p>
+            {{if $in.Rationale}}<div class="intent-note"><span class="note-label">为什么现在做</span><p>{{$in.Rationale}}</p></div>{{end}}
+            {{if $in.Risk}}<div class="intent-note note-risk"><span class="note-label">风险提示</span><p>{{$in.Risk}}</p></div>{{end}}
+            {{if $in.Warnings}}
+            <ul class="warning-list">
+              {{range $in.Warnings}}
+              <li class="warning-item{{if .IsError}} is-error{{end}}">
+                <span class="warning-code">{{.Code}}</span>
+                <span class="warning-msg">{{.Message}}</span>
+                {{if .File}}<span class="warning-loc">{{.File}}{{if .Line}}:{{.Line}}{{end}}</span>{{end}}
+              </li>
+              {{end}}
+            </ul>
+            {{end}}
+          </header>
+
+          {{if $.LargeMode}}<details class="panel-details"><summary class="panel-details-summary">展开意图内容（{{len $in.Changes}} 个变更）</summary>{{end}}
+          <div class="changes">
+            {{range $k, $ch := $in.Changes}}
+            <section class="change" id="change-{{$ch.Anchor}}" data-change-index="{{$ch.Number}}">
+              <div class="change-head">
+                <span class="change-file">{{$ch.File}}</span>
+                {{if $ch.IsNewFile}}<span class="tag tag-new">新增文件</span>{{end}}
+                {{if $ch.IsDeleted}}<span class="tag tag-del">删除文件</span>{{end}}
+                {{if $ch.RenamedFrom}}<span class="tag tag-ren">重命名自 {{$ch.RenamedFrom}}</span>{{end}}
+                {{if $ch.IsBinary}}<span class="tag tag-bin">二进制</span>{{end}}
+                <span class="change-loc">{{$ch.Location}}</span>
+              </div>
+              <div class="explain{{if not $ch.HasExplanation}} explain-missing{{end}}">
+                <span class="explain-label">业务解释</span>
+                {{if $ch.HasExplanation}}<p>{{$ch.Explanation}}</p>{{else}}<p>缺少业务解释（business_explanation 不能为空）</p>{{end}}
+              </div>
+              {{if $ch.IsPatchOnly}}
+              <div class="binary-note">此 change 仍是 patch-only（没有 lines），diff 为空；先运行 <code>intent-review fill</code>。</div>
+              {{else if $ch.IsBinary}}
+              <div class="binary-note">二进制文件变更，不提供两列 diff（请用 git 查看像素级差异）。</div>
+              {{else}}
+              <div class="diff-wrap">
+                <table class="diff">
+                  <colgroup><col class="col-ln"><col class="col-code"><col class="col-ln"><col class="col-code"></colgroup>
+                  <thead>
+                    <tr>
+                      <th colspan="2" class="col-head">State({{$ch.StatePrev}})</th>
+                      <th colspan="2" class="col-head">State({{$ch.StateCur}})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{range $row := $ch.Rows}}
+                    <tr class="row{{if $row.Context}} row-ctx{{end}}">
+                      <td class="ln">{{if $row.Left.No}}{{$row.Left.No}}{{end}}</td>
+                      <td class="code{{if $row.Left.Kind}} code-{{$row.Left.Kind}}{{else}} code-blank{{end}}">{{if $row.Left.Sign}}<span class="sign">{{$row.Left.Sign}}</span>{{end}}{{$row.Left.HTML}}</td>
+                      <td class="ln">{{if $row.Right.No}}{{$row.Right.No}}{{end}}</td>
+                      <td class="code{{if $row.Right.Kind}} code-{{$row.Right.Kind}}{{else}} code-blank{{end}}">{{if $row.Right.Sign}}<span class="sign">{{$row.Right.Sign}}</span>{{end}}{{$row.Right.HTML}}</td>
+                    </tr>
+                    {{end}}
+                  </tbody>
+                </table>
+              </div>
+              {{end}}
+            </section>
+            {{end}}
+          </div>
+          {{if $.LargeMode}}</details>{{end}}
+        </article>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+  </main>
+</div>
+<script>{{.JS}}</script>
+</body>
+</html>
