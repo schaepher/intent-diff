@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0",
+  "meta": {
+    "title": "网关限流与审计日志",
+    "base_commit": "HEAD~1",
+    "head_ref": "HEAD",
+    "generated_by": "intent-review demo",
+    "skill_version": "1.0"
+  },
+  "chains": [
+    {
+      "id": "chain-rate-limit",
+      "title": "请求限流与可观测",
+      "base_commit": "HEAD~1",
+      "intents": [
+        {
+          "id": "intent-001",
+          "title": "引入请求级限流",
+          "summary": "在 Handler 入口加令牌桶限流，防止下游过载。此时还没有日志。",
+          "business_rationale": "高峰期下游被击穿，需要在入口主动拦截。",
+          "risk_notes": "阈值需与运维确认；未覆盖分布式场景。",
+          "changes": [
+            {
+              "file": "handler.go",
+              "location": "Handler 入口（限流判断前）",
+              "business_explanation": "限流必须紧贴入口且在下游调用之前，才能挡住被放大的请求量。",
+              "patch": [
+                "@@ -4,4 +4,9 @@",
+                " ",
+                " // Handler 是网关入口。",
+                " func Handler(w http.ResponseWriter, r *http.Request) {",
+                "+\tlimiter := newTokenBucket(cfg)",
+                "+\tif !limiter.Allow() {",
+                "+\t\thttp.Error(w, \"rate limited\", http.StatusTooManyRequests)",
+                "+\t\treturn",
+                "+\t}",
+                " \tresp := callDownstream(r)"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "intent-002",
+          "title": "补充请求日志",
+          "summary": "在限流前后加日志，区分被限流与正常通过但下游慢。",
+          "business_rationale": "线上无法从现有指标判断请求是否被限流。",
+          "changes": [
+            {
+              "file": "handler.go",
+              "location": "Handler 入口（限流判断之前）",
+              "business_explanation": "先记录请求开始，才能把后续的限流/下游耗时归因到同一次请求。",
+              "patch": [
+                "@@ -5,3 +5,4 @@",
+                " // Handler 是网关入口。",
+                " func Handler(w http.ResponseWriter, r *http.Request) {",
+                "+\tlogf(\"request start\")",
+                " \tlimiter := newTokenBucket(cfg)"
+              ]
+            },
+            {
+              "file": "handler.go",
+              "location": "限流拒绝分支",
+              "business_explanation": "只有被限流的请求才记这条日志，避免日志量随流量线性膨胀。",
+              "patch": [
+                "@@ -9,3 +9,4 @@",
+                " \tif !limiter.Allow() {",
+                "+\t\tlogf(\"rate limited\")",
+                " \t\thttp.Error(w, \"rate limited\", http.StatusTooManyRequests)",
+                " \t\treturn"
+              ]
+            },
+            {
+              "file": "handler.go",
+              "location": "Handler 尾部（写响应之前）",
+              "business_explanation": "完成日志放在写响应之前，保证客户端拿到响应时日志已经落盘。",
+              "patch": [
+                "@@ -14,2 +14,3 @@",
+                " \tresp := callDownstream(r)",
+                "+\tlogf(\"request done\")",
+                " \tw.Write(resp)"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "intent-003",
+          "title": "开放限流阈值配置",
+          "summary": "把每秒限流阈值提到配置项，避免写死常量。",
+          "business_rationale": "不同环境阈值不同，需要不重新编译即可调整。",
+          "changes": [
+            {
+              "file": "config.go",
+              "location": "Config 结构体字段",
+              "business_explanation": "阈值是环境相关参数，放进配置结构而不是常量。",
+              "patch": [
+                "@@ -4,3 +4,4 @@",
+                " type Config struct {",
+                "-\tTimeoutSeconds int",
+                "+\tTimeoutSeconds  int",
+                "+\tRateLimitPerSec int",
+                " }"
+              ]
+            },
+            {
+              "file": "config.go",
+              "location": "默认配置字面量",
+              "business_explanation": "默认值 50 与运维给定的初始阈值一致，未配置时行为可预测。",
+              "patch": [
+                "@@ -9,1 +9,1 @@",
+                "-var cfg = Config{TimeoutSeconds: 3}",
+                "+var cfg = Config{TimeoutSeconds: 3, RateLimitPerSec: 50}"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chain-audit-log",
+      "title": "审计日志",
+      "base_commit": "HEAD~1",
+      "intents": [
+        {
+          "id": "intent-audit-001",
+          "title": "新增审计事件记录",
+          "summary": "新增独立的审计文件，记录需要合规留痕的操作事件。",
+          "business_rationale": "合规要求关键操作可追溯。",
+          "changes": [
+            {
+              "file": "audit.go",
+              "location": "新增文件",
+              "business_explanation": "审计与业务日志分离，便于单独采集与保留。",
+              "new_file": true,
+              "patch": [
+                "@@ -0,0 +1,9 @@",
+                "+package gateway",
+                "+",
+                "+// Audit 记录审计事件。",
+                "+type Audit struct {",
+                "+\tEvents []string",
+                "+}",
+                "+",
+                "+// Record 追加一条审计事件。",
+                "+func (a *Audit) Record(event string) { a.Events = append(a.Events, event) }"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
