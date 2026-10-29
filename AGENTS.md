@@ -9,8 +9,9 @@
 生成**单文件、离线可打开的代码评审页面**；同时提供**链条重放校验**，保证「意图顺序 = 代码状态推进」。
 工具**不调用 LLM、不做语义分组**：拆意图与写业务解释由 agent skill 负责，渲染与校验必须确定性。
 
-**这不是 codeintel 仓库**：本仓库没有 `.codeintel/`、没有 `codeintel` 命令、没有 SQLite 索引。
-不要运行 `codeintel ...`，也不要把 codeintel 的文档/脚本约定套过来。
+**本仓库不是 codeintel 的实现仓库**：`codeintel` 是外部工具（另一个仓库的产物），
+本仓库的构建/测试不依赖它。可以用它给本仓库建临时索引做**调用链与死代码审计**
+（`.codeintel/` 已 gitignore）；但不要引入 codeintel 的文档/脚本约定。
 
 ## 文档导航
 
@@ -99,6 +100,32 @@ bin/intent-review schema > /tmp/schema.json
 - 浏览器自检依赖 playwright：`npm i playwright`（仓库根；`node_modules` 已 gitignore）。
   没有 playwright 时 `ui-check` 会明确退出码 2，不要伪造通过。
 - `TMPDIR` 默认无所谓；临时产物一律放 `.tmp/`（已 gitignore），不要写进 `examples/` 或仓库根。
+
+## 可选的代码审计（外部 codeintel）
+
+改符号前、或做「有没有多余实现」审计时，用外部 codeintel 索引本仓库：
+
+```bash
+PATH=$PATH:$(go env GOPATH)/bin codeintel reindex --repo . --progress plain
+codeintel query unused  --repo .                 # 死代码候选
+codeintel query callers '<canonical-id 或名字>'  # 谁在调用（改符号前必看）
+codeintel query callees '<canonical-id>'         # 流程链路（CLI→internal）
+codeintel query impact  '<canonical-id>'         # 深度 3 影响面
+```
+
+**解读 `unused` 的三个已知误报**（本仓库实测，2026-10-29）：
+
+- **实参位置的调用**（`f(g())`、`append(x, g())`、`fmt.Sprintf("...", g())`）被记为
+  `passes_result` 而不是 `calls` → `unused` 会误报。已知：`countIntents`、`withRows`、
+  `report.FormatHuman`、`report.ShortSHA`、`validate.compareHead`、`existWord`。
+  判死代码前先用 `query callers` + `grep` 确认「真的没有调用点」。
+- `_test.go` 不入索引 → `internal/testutil` 的 helper 会全部列为未调用（正常）。
+- `examples/demo/files/{base,head}` 是 demo fixture，允许存在未被调用的函数；
+  `main`/`run` 作为入口没有 caller 也正常。
+
+**审计前先 `reindex` 而不是 `update`**：本仓库实测增量 update 后出现大量
+「跳过边」（69 → 507）与更多 unused 误报（`writeOut`/`runRender` 被误判），
+全量 reindex 后消失；结论以 reindex 为准。
 
 ## 开发流程（按顺序做）
 
