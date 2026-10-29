@@ -7,7 +7,6 @@ package validate
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"intent-review/internal/replay"
 	"intent-review/internal/report"
@@ -17,7 +16,7 @@ import (
 // Run 校验整份文档。返回的 error 只表示用法/IO 级失败（退出码 2）。
 func Run(doc schema.Document, repoDir string) (report.Result, error) {
 	errs := schema.CheckStructure(doc)
-	if hasBlocking(errs) {
+	if report.HasBlocking(errs) {
 		return report.NewResult(errs), nil
 	}
 	if unfilled := unfilledChanges(doc); len(unfilled) > 0 {
@@ -73,12 +72,12 @@ func unfilledChanges(doc schema.Document) []report.Error {
 			in := &chain.Intents[ii]
 			for k := range in.Changes {
 				ch := &in.Changes[k]
-				if ch.Binary || len(ch.Patch) == 0 || len(ch.Lines) > 0 {
+				if !ch.NeedsFill() {
 					continue
 				}
 				errs = append(errs, report.Error{
 					Code: report.CodeSchemaInvalid, ChainID: chain.ID, IntentID: in.ID,
-					ChangeIndex: intPtr(k), File: ch.File,
+					ChangeIndex: report.Index(k), File: ch.File,
 					Message: "change 仍含 patch 且没有 lines",
 					Hint:    "先运行 intent-review fill <file.json> --repo <repo> -o <filled.json>，再校验填充结果。",
 				})
@@ -123,7 +122,7 @@ func replayChain(eng *replay.Engine, chain *schema.Chain) ([]report.Error, bool)
 			if ch.Binary {
 				errs = append(errs, report.Error{
 					Code: report.CodeBinaryChangeSkipped, Severity: report.SeverityWarning,
-					ChainID: chain.ID, IntentID: in.ID, ChangeIndex: intPtr(k), File: ch.File,
+					ChainID: chain.ID, IntentID: in.ID, ChangeIndex: report.Index(k), File: ch.File,
 					Message: "binary change 不参与重放校验（仅渲染说明）",
 				}.WithChange(k))
 				_ = eng.Apply(ctx, ch)
@@ -191,7 +190,7 @@ func firstLineDiff(chainID, file string, want, got []string, head string) *repor
 			return &report.Error{
 				Code: report.CodeFinalStateMismatch, ChainID: chainID, File: file, Line: i + 1,
 				Expected: want[i], Actual: got[i],
-				Hint: fmt.Sprintf("最终状态必须等于 head（%s）；检查意图是否遗漏/多出该行变更。", shortSHA(head)),
+				Hint: fmt.Sprintf("最终状态必须等于 head（%s）；检查意图是否遗漏/多出该行变更。", report.ShortSHA(head)),
 			}
 		}
 	}
@@ -208,33 +207,15 @@ func firstLineDiff(chainID, file string, want, got []string, head string) *repor
 			Code: report.CodeFinalStateMismatch, ChainID: chainID, File: file, Line: line,
 			Expected: expected, Actual: actual,
 			Message: fmt.Sprintf("重放结果共 %d 行，head 共 %d 行", len(got), len(want)),
-			Hint:    fmt.Sprintf("最终状态必须等于 head（%s）；检查是否遗漏或多出变更。", shortSHA(head)),
+			Hint:    fmt.Sprintf("最终状态必须等于 head（%s）；检查是否遗漏或多出变更。", report.ShortSHA(head)),
 		}
 	}
 	return nil
 }
-
-func hasBlocking(errs []report.Error) bool {
-	for _, e := range errs {
-		if !e.Warning() {
-			return true
-		}
-	}
-	return false
-}
-
-func intPtr(i int) *int { return &i }
 
 func existWord(exists bool) string {
 	if exists {
 		return "存在"
 	}
 	return "不存在"
-}
-
-func shortSHA(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return strings.TrimSpace(sha)
 }

@@ -15,10 +15,8 @@ import (
 // Run 填充并返回新的 JSON 字节与结果。返回的 error 只表示用法/IO 级失败。
 func Run(doc schema.Document, raw []byte, repoDir string) ([]byte, report.Result, error) {
 	errs := schema.CheckStructure(doc)
-	for _, e := range errs {
-		if !e.Warning() {
-			return nil, report.NewResult(errs), nil
-		}
+	if report.HasBlocking(errs) {
+		return nil, report.NewResult(errs), nil
 	}
 	repo, err := replay.Open(repoDir)
 	if err != nil {
@@ -74,7 +72,7 @@ func fillChain(chainIdx int, eng *replay.Engine, chain *schema.Chain, updates ma
 			if len(ch.Lines) == 0 {
 				errs = append(errs, report.Error{
 					Code: report.CodeSchemaInvalid, ChainID: chain.ID, IntentID: in.ID,
-					ChangeIndex: intPtr(k), File: ch.File,
+					ChangeIndex: report.Index(k), File: ch.File,
 					Message: "change 既无 lines 也无 patch",
 					Hint:    "为每个 change 提供 patch（unified diff 行数组）或完整的 lines/行号。",
 				})
@@ -110,7 +108,7 @@ func applyPatch(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) (*report.
 	if ch.NewFile && h.OldStart != 0 {
 		return nil, &report.Error{
 			Code: report.CodePatchParse, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File,
+			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File,
 			Message: "new_file 的 patch hunk 头应为 @@ -0,0 +1,N @@",
 		}
 	}
@@ -154,7 +152,7 @@ func tryRelocate(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) *report.
 	pos := positions[0]
 	e := report.Error{
 		Code: report.CodePatchContext, Severity: report.SeverityWarning,
-		ChainID: ctx.ChainID, IntentID: ctx.IntentID, ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File,
+		ChainID: ctx.ChainID, IntentID: ctx.IntentID, ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File,
 		Message: fmt.Sprintf("patch 上下文在 old_start=%d 处不匹配，但该块在 State 中唯一出现于第 %d 行，已按实际位置回填",
 			ch.OldStart, pos+1),
 		Hint: "建议让 agent 用上一状态重新生成 patch（行号随前序 change 推进）。",
@@ -186,5 +184,3 @@ func findAll(lines, want []string) []int {
 	sort.Ints(out)
 	return out
 }
-
-func intPtr(i int) *int { return &i }

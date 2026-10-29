@@ -184,3 +184,21 @@ func TestSchemaJSONValid(t *testing.T) {
 		}
 	}
 }
+
+func TestChangeNeedsFill(t *testing.T) {
+	cases := []struct {
+		name string
+		ch   Change
+		want bool
+	}{
+		{"patch-only", Change{Patch: []string{"@@ -1 +1 @@"}}, true},
+		{"with-lines", Change{Patch: []string{"x"}, Lines: []Line{{Type: LineAdd, Content: "a"}}}, false},
+		{"no-patch", Change{}, false},
+		{"binary", Change{Patch: []string{"x"}, Binary: true}, false},
+	}
+	for _, c := range cases {
+		if got := c.ch.NeedsFill(); got != c.want {
+			t.Errorf("%s: NeedsFill = %v want %v", c.name, got, c.want)
+		}
+	}
+}

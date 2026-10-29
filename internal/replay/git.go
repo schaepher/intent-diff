@@ -118,11 +118,3 @@ func SplitLines(content string) []string {
 	}
 	return s
 }
-
-// JoinLines 反向拼回文件内容（保留末尾换行）。
-func JoinLines(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	return strings.Join(lines, "\n") + "\n"
-}

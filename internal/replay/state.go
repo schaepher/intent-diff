@@ -44,9 +44,6 @@ func NewEngine(repo *Repo, base string) *Engine {
 	}
 }
 
-// Base 返回链的 base 提交。
-func (e *Engine) Base() string { return e.base }
-
 // State 返回当前状态快照（只读；值语义复制）。
 func (e *Engine) State() map[string]File {
 	out := make(map[string]File, len(e.state))
@@ -120,7 +117,7 @@ func (e *Engine) Apply(ctx Ctx, ch *schema.Change) *report.Error {
 		if want := idx + 1; ch.NewStart != want {
 			return &report.Error{
 				Code: report.CodeContextMismatch, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-				ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File, Line: ch.NewStart,
+				ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File, Line: ch.NewStart,
 				Message: fmt.Sprintf("new_start 与重放位置不一致：期望 %d，实际 %d", want, ch.NewStart),
 				Hint:    "new_start 是变更块在 State(i) 中的起始行号；同一意图内同文件多处修改按数组顺序推进行号。",
 			}
@@ -147,7 +144,7 @@ func (e *Engine) applyRename(ctx Ctx, ch *schema.Change) *report.Error {
 	fail := func(msg, hint string) *report.Error {
 		return &report.Error{
 			Code: report.CodeRenameMismatch, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File, Message: msg, Hint: hint,
+			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File, Message: msg, Hint: hint,
 		}
 	}
 	if ch.NewFile || ch.Deleted {
@@ -184,7 +181,7 @@ func locate(ctx Ctx, base string, ch *schema.Change, file File, oldSide []string
 	fail := func(msg, hint string) *report.Error {
 		return &report.Error{
 			Code: report.CodeContextMismatch, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File, Line: ch.OldStart,
+			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File, Line: ch.OldStart,
 			Message: msg, Hint: hint,
 		}
 	}
@@ -197,8 +194,8 @@ func locate(ctx Ctx, base string, ch *schema.Change, file File, oldSide []string
 	if !file.Exists {
 		return 0, 0, &report.Error{
 			Code: report.CodeFileNotFound, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File,
-			Message: fmt.Sprintf("文件 %q 在 base（%s）中不存在", ch.File, shortSHA(base)),
+			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File,
+			Message: fmt.Sprintf("文件 %q 在 base（%s）中不存在", ch.File, report.ShortSHA(base)),
 			Hint:    "若是新增文件请设置 new_file: true；若由前序意图创建，请检查前序 change 是否已成功应用。",
 		}
 	}
@@ -236,19 +233,10 @@ func verifyContents(ctx Ctx, ch *schema.Change, file File, idx int, oldSide []st
 		line := ch.OldStart + i
 		return &report.Error{
 			Code: report.CodeContextMismatch, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: intPtr(ctx.ChangeIndex), File: ch.File, Line: line,
+			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File, Line: line,
 			Expected: want, Actual: got,
 			Hint: "意图的 before 与上一状态的 after 不一致：检查意图顺序、行号或 change 内容（已入库的代码必须在当前意图中作为 context 出现）。",
 		}
 	}
 	return nil
-}
-
-func intPtr(i int) *int { return &i }
-
-func shortSHA(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }

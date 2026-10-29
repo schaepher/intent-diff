@@ -120,15 +120,15 @@ func checkChangeShape(in *Intent, ch *Change, k int, wrap func(report.Error) rep
 		switch l.Type {
 		case LineContext, LineAdd, LineDel:
 		default:
-			add(w(report.Error{Code: report.CodeInvalidLineType, Line: li + 1, Message: fmt.Sprintf("非法的行类型 %q（只允许 context/add/del）", l.Type)}))
+			add(w(report.Error{Code: report.CodeSchemaInvalid, Line: li + 1, Message: fmt.Sprintf("非法的行类型 %q（只允许 context/add/del）", l.Type)}))
 		}
 	}
 	checkLineNumbers(ch, w, add)
 }
 
 func checkLineNumbers(ch *Change, w func(report.Error) report.Error, add func(report.Error)) {
-	hasOldSide := ch.LeftCount() > 0
-	hasNewSide := ch.RightCount() > 0
+	hasOldSide := len(ch.LeftLines()) > 0
+	hasNewSide := len(ch.RightLines()) > 0
 	if ch.NewFile {
 		if ch.OldStart != 0 {
 			add(w(report.Error{Code: report.CodeContextMismatch, Line: 1, Message: "new_file 的 old_start 必须为 0", Hint: "新增文件没有旧状态一侧"}))

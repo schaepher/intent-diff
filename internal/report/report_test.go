@@ -84,3 +84,28 @@ func TestJSONShape(t *testing.T) {
 		t.Errorf("empty warnings should be omitted: %s", out)
 	}
 }
+
+func TestIndexAndShortSHA(t *testing.T) {
+	i := Index(7)
+	if i == nil || *i != 7 {
+		t.Fatalf("Index = %v", i)
+	}
+	if got := ShortSHA("  6325d83453c45f49715688c4c51c437ff6984411 "); got != "6325d834" {
+		t.Fatalf("ShortSHA = %q", got)
+	}
+	if got := ShortSHA("abc"); got != "abc" {
+		t.Fatalf("ShortSHA(short) = %q", got)
+	}
+}
+
+func TestHasBlocking(t *testing.T) {
+	if HasBlocking(nil) {
+		t.Fatalf("nil must not block")
+	}
+	if HasBlocking([]Error{{Code: CodeHighlightFallback, Severity: SeverityWarning}}) {
+		t.Fatalf("warnings must not block")
+	}
+	if !HasBlocking([]Error{{Code: CodeContextMismatch}}) {
+		t.Fatalf("errors must block")
+	}
+}

@@ -101,24 +101,7 @@ func collect(lines []Line, newSide bool) []string {
 	return out
 }
 
-// LeftCount / RightCount 返回两列行数。
-func (c Change) LeftCount() int {
-	n := 0
-	for _, l := range c.Lines {
-		if l.IsContext() || l.IsDel() {
-			n++
-		}
-	}
-	return n
-}
-
-// RightCount 返回右列（新状态一侧）行数。
-func (c Change) RightCount() int {
-	n := 0
-	for _, l := range c.Lines {
-		if l.IsContext() || l.IsAdd() {
-			n++
-		}
-	}
-	return n
+// NeedsFill 表示 change 仍是 patch-only（尚未 fill 成 canonical lines）。
+func (c Change) NeedsFill() bool {
+	return !c.Binary && len(c.Patch) > 0 && len(c.Lines) == 0
 }

@@ -26,7 +26,6 @@ const (
 	CodeHighlightFallback   = "HIGHLIGHT_FALLBACK"
 	CodeLargeReview         = "LARGE_REVIEW"
 	CodeRepoUnavailable     = "REPO_UNAVAILABLE"
-	CodeInvalidLineType     = "SCHEMA_INVALID"
 	CodeBinaryChangeSkipped = "BINARY_CHANGE_SKIPPED"
 )
 
@@ -56,16 +55,31 @@ type Error struct {
 // Warning 返回该诊断是否为警告。
 func (e Error) Warning() bool { return e.Severity == SeverityWarning }
 
-// AsWarning 复制一份并标记为警告级。
-func (e Error) AsWarning() Error {
-	e.Severity = SeverityWarning
-	return e
+// Index 返回指向 i 的指针，用于 Error.ChangeIndex（0 基下标）。
+func Index(i int) *int { return &i }
+
+// ShortSHA 截断提交 ID，便于错误信息阅读。
+func ShortSHA(sha string) string {
+	sha = strings.TrimSpace(sha)
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
+}
+
+// HasBlocking 判断诊断中是否存在 error 级（warning 不阻塞）。
+func HasBlocking(errs []Error) bool {
+	for _, e := range errs {
+		if !e.Warning() {
+			return true
+		}
+	}
+	return false
 }
 
 // WithChange 复制一份并补上 change 下标。
 func (e Error) WithChange(idx int) Error {
-	i := idx
-	e.ChangeIndex = &i
+	e.ChangeIndex = Index(idx)
 	return e
 }
 

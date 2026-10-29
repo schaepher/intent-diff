@@ -90,7 +90,7 @@ func hasPatchOnly(doc schema.Document) bool {
 	for _, c := range doc.Chains {
 		for _, in := range c.Intents {
 			for _, ch := range in.Changes {
-				if len(ch.Patch) > 0 && len(ch.Lines) == 0 {
+				if ch.NeedsFill() {
 					return true
 				}
 			}

@@ -181,13 +181,5 @@ func TestSplitLines(t *testing.T) {
 				t.Errorf("SplitLines(%q)[%d] = %q want %q", in, i, got[i], want[i])
 			}
 		}
-		if want == nil {
-			if JoinLines(want) != "" {
-				t.Errorf("JoinLines(nil) = %q", JoinLines(want))
-			}
-		}
-	}
-	if JoinLines([]string{"a", "b"}) != "a\nb\n" {
-		t.Errorf("JoinLines = %q", JoinLines([]string{"a", "b"}))
 	}
 }
