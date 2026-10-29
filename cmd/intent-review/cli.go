@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -97,15 +96,6 @@ func hasPatchOnly(doc schema.Document) bool {
 		}
 	}
 	return false
-}
-
-// decodeFilled 把 fill 输出重新解码为 Document。
-func decodeFilled(raw []byte) (schema.Document, error) {
-	var doc schema.Document
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return schema.Document{}, fmt.Errorf("解析填充结果失败: %w", err)
-	}
-	return doc, nil
 }
 
 // countIntents 统计整份文档的意图数。

@@ -77,7 +77,7 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 			fmt.Fprintf(stderr, "render: 填充失败（%d 个错误）\n", len(res.Errors))
 			return report.ExitCode(res)
 		}
-		if doc, err = decodeFilled(filled); err != nil {
+		if doc, err = schema.Decode(filled); err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
 			return 2
 		}
