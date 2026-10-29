@@ -249,3 +249,50 @@ func TestCLIRenderPrintsRenderWarnings(t *testing.T) {
 		t.Fatalf("expected large-review warning, stderr=%s", errOut)
 	}
 }
+
+func canonicalDoc() schema.Document {
+	doc := skeletonDoc()
+	ch := &doc.Chains[0].Intents[0].Changes[0]
+	ch.Patch = nil
+	ch.OldStart, ch.NewStart = 1, 1
+	ch.Lines = []schema.Line{
+		{Type: schema.LineContext, Content: "one"},
+		{Type: schema.LineAdd, Content: "ONE"},
+	}
+	return doc
+}
+
+// 设计文档 §11：major 不匹配时工具拒绝处理——render 也不能生成页面。
+func TestCLIRenderRejectsUnsupportedSchemaVersion(t *testing.T) {
+	doc := canonicalDoc()
+	doc.SchemaVersion = "2.0"
+	docPath := writeDoc(t, doc)
+	htmlPath := filepath.Join(t.TempDir(), "review.html")
+	code, out, errOut := runCLI(t, "render", docPath, "-o", htmlPath)
+	if code != 3 {
+		t.Fatalf("render v2.0: code=%d out=%s err=%s", code, out, errOut)
+	}
+	if _, err := os.Stat(htmlPath); !os.IsNotExist(err) {
+		t.Fatalf("unsupported version must not write HTML (stat err=%v)", err)
+	}
+}
+
+// 设计文档 §8.5：手工文件绕过 schema 时，render 仍要显示红色警告块而不是拒绝渲染。
+func TestCLIRenderShowsMissingExplanationBlock(t *testing.T) {
+	doc := canonicalDoc()
+	doc.Chains[0].Intents[0].Changes[0].BusinessExplanation = ""
+	docPath := writeDoc(t, doc)
+	htmlPath := filepath.Join(t.TempDir(), "review.html")
+	code, out, errOut := runCLI(t, "render", docPath, "-o", htmlPath)
+	if code != 0 {
+		t.Fatalf("render should tolerate missing explanation: code=%d err=%s", code, errOut)
+	}
+	html, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("read html: %v", err)
+	}
+	if !strings.Contains(string(html), "explain-missing") {
+		t.Fatalf("missing explanation block not rendered")
+	}
+	_ = out
+}

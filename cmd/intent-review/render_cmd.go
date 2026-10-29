@@ -9,6 +9,7 @@ import (
 	"intent-review/internal/fill"
 	"intent-review/internal/render"
 	"intent-review/internal/report"
+	"intent-review/internal/schema"
 	"intent-review/internal/validate"
 )
 
@@ -53,6 +54,13 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 	doc, raw, code := loadDoc(input, stderr)
 	if code != 0 {
 		return code
+	}
+	// 设计文档 §11：major 不匹配时拒绝处理（fill/validate 经 CheckStructure，
+	// render 没有结构校验，必须显式检查版本）。
+	if e := schema.CheckVersion(doc.SchemaVersion); e != nil {
+		res := report.NewResult([]report.Error{*e})
+		printDiagnostics(res, false, stdout, stderr)
+		return report.ExitCode(res)
 	}
 	if hasPatchOnly(doc) {
 		if repoDir == "" {
