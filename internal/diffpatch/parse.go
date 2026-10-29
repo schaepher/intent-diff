@@ -35,6 +35,8 @@ func Parse(patch []string) (*Hunk, *report.Error) {
 	body := 0
 	seenHeader := false
 	for _, raw := range patch {
+		// 头部按去 CR 的文本识别；行内容保留原始字节（CRLF 仓库的 context 行
+		// 本身以 \r 结尾，剥掉会导致与文件内容不匹配）。
 		line := strings.TrimSuffix(raw, "\r")
 		switch {
 		case strings.HasPrefix(line, "@@"):
@@ -66,10 +68,10 @@ func Parse(patch []string) (*Hunk, *report.Error) {
 		case strings.HasPrefix(line, `\`):
 			// "\ No newline at end of file" 与行内容无关，忽略。
 			continue
-		case line == "":
+		case raw == "":
 			h.Lines = append(h.Lines, schema.Line{Type: schema.LineContext, Content: ""})
 		default:
-			l, err := parseBodyLine(line)
+			l, err := parseBodyLine(raw)
 			if err != nil {
 				return nil, err
 			}

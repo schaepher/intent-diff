@@ -53,7 +53,7 @@
 
       <div class="intent-panels">
         {{range $ii, $in := $c.Intents}}
-        <article class="intent-panel" id="panel-{{$ci}}-{{$ii}}" data-panel data-chain="{{$c.ID}}" data-intent="{{$in.ID}}"{{if ne $ii 0}} hidden{{end}}>
+        <article class="intent-panel" id="panel-{{$ci}}-{{$ii}}" data-panel data-chain="{{$c.ID}}" data-intent="{{$in.ID}}"{{if or (ne $ci 0) (ne $ii 0)}} hidden{{end}}>
           <header class="intent-head">
             <div class="intent-kicker">Intent {{$in.Number}} / {{$in.Total}}</div>
             <h1 class="intent-title">{{$in.Title}}</h1>
@@ -78,6 +78,7 @@
             {{range $k, $ch := $in.Changes}}
             <section class="change" id="change-{{$ch.Anchor}}" data-change-index="{{$ch.Number}}">
               <div class="change-head">
+                <span class="change-index" title="change 序号（深链 #chain/intent/{{$ch.Number}}）">#{{$ch.Number}}</span>
                 <span class="change-file">{{$ch.File}}</span>
                 {{if $ch.IsNewFile}}<span class="tag tag-new">新增文件</span>{{end}}
                 {{if $ch.IsDeleted}}<span class="tag tag-del">删除文件</span>{{end}}

@@ -91,9 +91,32 @@ func TestBuildProducesSelfContainedHTML(t *testing.T) {
 			t.Errorf("self-contained violation: %q", bad)
 		}
 	}
-	// 未激活的链必须 hidden。
+	// 未激活的链必须 hidden；初始只有一个 panel 可见。
 	if !strings.Contains(html, `data-chain-section="chain-audit" hidden`) {
 		t.Errorf("inactive chain must be hidden")
+	}
+	if n := strings.Count(html, `data-panel data-chain=`); n != 3 {
+		t.Fatalf("expected 3 panels, got %d", n)
+	}
+	if n := strings.Count(html, `<article class="intent-panel"`); n != 3 {
+		t.Fatalf("expected 3 article panels, got %d", n)
+	}
+	visible := 0
+	for i := 0; i < len(html); {
+		idx := strings.Index(html[i:], `<article class="intent-panel"`)
+		if idx < 0 {
+			break
+		}
+		start := i + idx
+		end := strings.Index(html[start:], ">")
+		tag := html[start : start+end]
+		if !strings.Contains(tag, " hidden") {
+			visible++
+		}
+		i = start + 1
+	}
+	if visible != 1 {
+		t.Fatalf("only the first panel should be visible at render time, got %d", visible)
 	}
 	// sticky 状态机 + 两列 + 行号。
 	for _, want := range []string{"position: sticky", "State(0)", "State(1)", `<td class="ln">12</td>`, "code-del", "code-add", "code-blank"} {
@@ -124,6 +147,7 @@ func TestBuildDeepLinkAnchors(t *testing.T) {
 	html, _ := build(t, testDoc(), Options{})
 	for _, want := range []string{
 		`id="change-c0-i0-ch1"`, `data-change-index="1"`, `id="change-c0-i1-ch1"`,
+		`title="change 序号（深链 #chain/intent/1）"`,
 		`data-intent="intent-001"`, `data-intent="intent-002"`, `id="panel-0-0"`,
 	} {
 		if !strings.Contains(html, want) {

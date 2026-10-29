@@ -114,3 +114,14 @@ func TestParseNoNewlineMarker(t *testing.T) {
 		t.Fatalf("lines = %+v", h.Lines)
 	}
 }
+
+func TestParseKeepsCRLFContent(t *testing.T) {
+	patch := []string{"@@ -1,1 +1,2 @@\r", " one\r", "+ONE\r"}
+	h, e := Parse(patch)
+	if e != nil {
+		t.Fatalf("parse: %+v", e)
+	}
+	if h.Lines[0].Content != "one\r" || h.Lines[1].Content != "ONE\r" {
+		t.Fatalf("CRLF content must be preserved: %+v", h.Lines)
+	}
+}

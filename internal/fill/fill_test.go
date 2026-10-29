@@ -268,3 +268,37 @@ func TestRunNewFileAndDeleted(t *testing.T) {
 		t.Fatalf("validate: %v %+v", err, vres.Errors)
 	}
 }
+
+func TestRunCRLFFile(t *testing.T) {
+	repo := testutil.NewGitRepo(t, map[string]string{"a.txt": "one\r\ntwo\r\n"})
+	base := repo.Head()
+	repo.Write("a.txt", "one\r\nONE\r\ntwo\r\n")
+	head := repo.Commit("crlf")
+
+	doc := schema.Document{
+		SchemaVersion: schema.SchemaVersion,
+		Meta:          schema.Meta{Title: "crlf", BaseCommit: base, HeadRef: head},
+		Chains: []schema.Chain{{ID: "c", Title: "c", Intents: []schema.Intent{{
+			ID: "i", Title: "插入", Summary: "CRLF 文件插入一行",
+			Changes: []schema.Change{{
+				File: "a.txt", Location: "第 1 行后", BusinessExplanation: "验证 CRLF 内容不被改写",
+				Patch: []string{"@@ -1,1 +1,2 @@", " one\r", "+ONE\r"},
+			}},
+		}}}},
+	}
+	out, res, err := Run(doc, mustMarshal(t, doc), repo.Dir)
+	if err != nil || !res.OK {
+		t.Fatalf("fill: %v %+v", err, res.Errors)
+	}
+	var filled schema.Document
+	if err := json.Unmarshal(out, &filled); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := filled.Chains[0].Intents[0].Changes[0].Lines[0].Content; got != "one\r" {
+		t.Fatalf("CR 被剥掉: %q", got)
+	}
+	vres, err := validate.Run(filled, repo.Dir)
+	if err != nil || !vres.OK {
+		t.Fatalf("validate: %v %+v", err, vres.Errors)
+	}
+}

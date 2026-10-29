@@ -317,6 +317,17 @@ code, .mono { font-family: var(--mono); }
   font-size: 12px;
 }
 
+.change-index {
+  display: inline-block;
+  min-width: 2.2em;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--bg-muted);
+  color: var(--text-soft);
+  font-size: 11px;
+  text-align: center;
+}
+
 .change-file { font-weight: 700; }
 .change-loc { color: var(--text-soft); font-family: inherit; }
 
