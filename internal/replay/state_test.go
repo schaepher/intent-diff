@@ -183,3 +183,21 @@ func TestSplitLines(t *testing.T) {
 		}
 	}
 }
+
+func TestNewStartFor(t *testing.T) {
+	cases := []struct {
+		oldStart, oldCount int
+		deleted            bool
+		want               int
+	}{
+		{5, 3, false, 5},
+		{3, 0, false, 4},
+		{0, 0, false, 1},
+		{1, 4, true, 0},
+	}
+	for _, c := range cases {
+		if got := NewStartFor(c.oldStart, c.oldCount, c.deleted); got != c.want {
+			t.Errorf("NewStartFor(%d,%d,%v) = %d want %d", c.oldStart, c.oldCount, c.deleted, got, c.want)
+		}
+	}
+}

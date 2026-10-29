@@ -71,6 +71,18 @@ func (e *Engine) Unverified() []string {
 	return out
 }
 
+// NewStartFor 返回变更块在 State(i) 中的起始行号（fill 回填与 Apply 校验共用）：
+// 纯插入（oldCount==0）插在 oldStart 之后；其余从 oldStart 开始；删除文件为 0。
+func NewStartFor(oldStart, oldCount int, deleted bool) int {
+	if deleted {
+		return 0
+	}
+	if oldCount == 0 {
+		return oldStart + 1
+	}
+	return oldStart
+}
+
 // File 返回当前状态中的文件（未加载过的从 base 读取）。
 func (e *Engine) File(ctx Ctx, p string) (File, *report.Error) {
 	if f, ok := e.state[p]; ok {
@@ -114,7 +126,7 @@ func (e *Engine) Apply(ctx Ctx, ch *schema.Change) *report.Error {
 		return err
 	}
 	if !ch.Deleted {
-		if want := idx + 1; ch.NewStart != want {
+		if want := NewStartFor(ch.OldStart, oldLen, false); ch.NewStart != want {
 			return &report.Error{
 				Code: report.CodeContextMismatch, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
 				ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File, Line: ch.NewStart,

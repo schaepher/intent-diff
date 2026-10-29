@@ -114,7 +114,7 @@ func applyPatch(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) (*report.
 	}
 	ch.Lines = h.Lines
 	ch.OldStart = h.OldStart
-	ch.NewStart = newStartFor(ch, h)
+	ch.NewStart = replay.NewStartFor(h.OldStart, h.OldCount, ch.Deleted)
 	var warn *report.Error
 	if !ch.NewFile && !ch.Deleted && ch.RenamedFrom == "" && len(ch.LeftLines()) > 0 {
 		if relocated := tryRelocate(eng, ctx, ch); relocated != nil {
@@ -122,17 +122,6 @@ func applyPatch(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) (*report.
 		}
 	}
 	return warn, nil
-}
-
-func newStartFor(ch *schema.Change, h *diffpatch.Hunk) int {
-	switch {
-	case ch.Deleted:
-		return 0
-	case h.OldCount == 0:
-		return h.OldStart + 1
-	default:
-		return h.OldStart
-	}
 }
 
 // tryRelocate 在 old_start 处上下文不匹配时，寻找左列内容的唯一出现位置。
