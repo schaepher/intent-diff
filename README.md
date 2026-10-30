@@ -13,6 +13,9 @@
 ```bash
 go build -o bin/intent-review ./cmd/intent-review
 
+# 安装到 GOBIN/GOPATH/bin（无需 sudo）；也可 PREFIX=/usr/local/bin make install
+make install
+
 # 骨架（含 patch）→ 结构化 lines + 行号
 bin/intent-review fill review.json --repo . -o review.filled.json
 
