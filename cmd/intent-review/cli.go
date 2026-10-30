@@ -132,12 +132,19 @@ func addFilterFlags(fs *flag.FlagSet, ff *filterFlags) {
 	fs.Var(&ff.unexclude, "unexclude", "从排除列表删除某项（可重复，按字面值）")
 }
 
-// build 合并配置文件与命令行参数；第二个返回值是实际使用的配置文件路径（未使用时为空）。
-func (ff *filterFlags) build(repoDir string) (*filefilter.List, string, error) {
+// build 合并内置默认、文档 file_filter、配置文件与命令行参数：
+// 默认 → 文档 → 配置文件 → CLI（每一步的删除项优先于同层追加项）。
+// 第二个返回值是实际使用的配置文件路径（未使用时为空）。
+func (ff *filterFlags) build(repoDir string, doc *schema.FileFilterConfig) (*filefilter.List, string, error) {
 	cfg, path, err := filefilter.Load(ff.config, repoDir)
 	if err != nil {
 		return nil, "", err
 	}
-	list := filefilter.Resolve(cfg).Add(ff.exclude...).Remove(ff.unexclude...)
+	list := filefilter.Default()
+	if doc != nil {
+		list.Add(doc.Exclude...).Remove(doc.Unexclude...)
+	}
+	list.Add(cfg.Exclude...).Remove(cfg.Unexclude...)
+	list.Add(ff.exclude...).Remove(ff.unexclude...)
 	return list, path, nil
 }

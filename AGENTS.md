@@ -29,12 +29,13 @@
 ```
 cmd/intent-review/      CLI：validate/fill/render/schema/watch（只做参数解析、调用、输出）
 internal/schema/        数据模型、JSON Schema、版本检查、结构校验
-internal/replay/        git base/head 读取 + 逐意图状态重放（fill 与 validate 的唯一语义来源）
+internal/replay/        git base/head 读取 + 多仓引擎路由 + 逐意图状态重放（fill/validate 唯一语义来源）
 internal/filefilter/    覆盖检查的排除列表（内置 *_test.go 等）+ .intent-review.json 读取
 internal/diffpatch/     unified diff 单 hunk 解析（含 CRLF 保留）
 internal/fill/          patch→lines/行号；JSON 树合并（保留未知字段）
 internal/validate/      结构校验 + 重放 + 最终状态比对 + base..head 覆盖检查
 internal/report/        错误码、诊断结构、人类可读格式、退出码
+internal/revdiff/       两版材料的意图级差异（文件顺序/函数分组/解释内容/代码内容）
 internal/render/        HTML 模板、两列对齐、诊断上浮（go:embed：web/*.tmpl|css|js）
 internal/highlight/     chroma 封装：整列高亮后切行
 internal/testutil/      临时 git 仓库夹具（仅测试用）
@@ -81,6 +82,20 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
     （在 `--repo` 目录发现，`--config` 显式覆盖）与 `--exclude` / `--unexclude`（可重复，删除按字面值）。
     生效顺序：默认 → 配置 exclude → 配置 unexclude → CLI exclude → CLI unexclude。
     配置未知字段/非法 JSON 退出码 2（不静默忽略）；`render` 无 `--repo` 时不读配置。
+    文档级 `file_filter` 与配置文件、CLI 依次叠加（默认 → 文档 → 配置 → CLI）。
+16. **跨仓 = 一条链路由多个仓库**：`repos[]` 非空时逐仓 `replay.Engine`，`change.repo` 路由到对应仓库；
+    单仓文档（`repos` 为空）仓库 id 固定为 `""`，`change.repo` 必须省略。**不要**把仓库前缀拼进
+    `change.file`（那是仓库相对路径，高亮/覆盖检查/patch 都按它）；诊断里的仓库用 `report.Error.Repo`。
+    逐仓 base：`chain.base_commits[repo] > chain.base_commit > repos[].base_commit > meta.base_commit`；
+    逐仓 head：`repos[].head_ref > meta.head_ref`。
+17. **展示顺序 ≠ 重放顺序**：`display_order` / `display_group` 只影响 render（未设置排在已设置之后，
+    同值按声明顺序）；replay/fill/validate/深链/`change_index` 一律按 `changes` 数组顺序。
+18. **源码链接不猜**：`--source-root`（单仓 `<path>` / 多仓 `<id>=<path>`，可重复）> `repos[].source_root`
+    > 仓库 checkout 路径（项目根 + `repos[].path`）；没有源码根（含 render 无 `--repo`）时不生成链接。
+    链接是 `vscode://file/<abs>:<line>`，必须用 `template.URL`（html/template 会拒绝非 http scheme）。
+19. **更新反馈与产物**：`diff`/`watch` 的变更说明只读比较文档，不参与校验；匹配 change 用
+    `(repo,file,location)` 而不是数组下标（增删会错位）。评审产物放 `.intent-review/`（已 gitignore），
+    不随业务代码提交。
 
 ## 常用命令（提交前必须过）
 
@@ -155,6 +170,9 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 | `internal/render`（Options/默认阈值） | CLI flag、README、milestones 数据、ui-check 的 `--max-lines` 用例 |
 | `internal/highlight`（降级/切行） | fallback warning 测试、`--no-highlight` 测试、CSS 的 `tok-*` 类 |
 | `internal/filefilter`（默认排除项/模式语义/配置格式） | validate 覆盖测试、CLI 测试（config/--exclude/--unexclude/退出码 2）、README「文件过滤」与实现约定、AGENTS 契约 15、SKILL 提示 |
+| `internal/replay/project.go`（多仓 Project/Engines 路由） | fill/validate 多仓测试、CLI 跨仓测试、README「跨仓评审」、AGENTS 契约 16 |
+| `internal/render`（SourceRoots/展示顺序/仓库标签） | `render/multirepo_test.go`、模板与 CSS、ui-check（自包含断言）、README「展示顺序」「VS Code 跳转」 |
+| `internal/revdiff`（比较维度/匹配键） | `revdiff` 测试、`diff` CLI 测试、watch 输出、README「更新与反馈」 |
 | CLI 参数/子命令 | `parseFlagSet`（flag 与位置参数可交错）、help 文本、CLI 测试的退出码 |
 | `examples/demo` 的 fixture | **head 必须是可编译的完整包**（`go build ./...` 会编译它），同步 `review.json` 的 patch 行号 |
 | `skills/intent-review/SKILL.md` | README 命令/错误码、`docs/agents.md` 的调用模板 |
@@ -173,6 +191,12 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
   必须把"对齐变化"写进 patch（`del`+`add`），否则最终状态与 head 差一个空格。
 - **`hidden` 要写在严格祖先上**：面板可见性测试要区分"panel 自身 hidden"与"祖先链 hidden"；
   初始态只有 1 个 panel 可交互，切换后旧链的 panel 不应重新出现。
+- **多仓别把 repo 拼进 file**：`change.file` 是仓库相对路径；仓库靠 `change.repo` 路由。
+  拼成 `web:src/a.ts` 会让高亮 lexer、覆盖检查、patch 定位全部错位。
+- **`display_order` 只给渲染用**：在 replay/fill 里按它排序会破坏“上一意图状态 → 当前意图”的行号语义。
+- **`vscode://` 链接要用 `template.URL`**：html/template 的 URL 过滤器只放行 http/https 等 scheme，
+  直接写 string 会变成 `#ZgotmplZ`。
+- **revdiff 匹配用 (repo,file,location)**：用数组下标匹配时，一旦插入/删除 change 就会整段误报“解释变了”。
 - **排除列表不是“放宽校验”的开关**：它只跳过覆盖检查；别把 `filefilter.Match` 塞进 replay/compareHead，
   否则 agent 能把错误内容写进测试文件而 validate 仍报 ok。改默认排除项要同步 SKILL，否则 agent 会少写意图。
 - **sticky 失效先查祖先 overflow**：`.intent-timeline` 的祖先（`.main`/`.section`）不能有

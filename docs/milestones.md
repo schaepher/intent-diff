@@ -89,6 +89,41 @@ bash scripts/check-file-size.sh
 | render 附带校验同样过滤；无 `--repo` 不读配置 | `TestCLIRenderUsesFilter` |
 | 配置覆盖优先级（默认 → 配置 → CLI，删除优先） | `TestResolveAppliesExcludeThenUnexclude`、`TestResolveEmptyConfigKeepsDefaults` |
 
+## M7 跨仓项目、展示顺序、源码跳转、更新反馈
+
+| 验收项 | 证据 |
+|---|---|
+| 多仓组织为一个项目（repos + change.repo，逐仓 base/head） | `TestRunMultiRepoOK`、`TestCLIMultiRepoFillValidateRender`（跨仓 fill→validate→render） |
+| 逐仓覆盖检查（未覆盖文件带 repo 定位） | `TestRunMultiRepoCoverageIsPerRepo`、`TestRunMultiRepoFilterAppliesToAllRepos` |
+| 多仓结构校验（id 唯一、必须声明 repo、path 相对、逐仓 base） | `TestCheckStructureMultiRepo`、`TestCheckStructureRepoIDsAndBases`、`TestCheckStructureChainBaseCommits` |
+| 文档内统一 file_filter（跨仓共用，本次列表 *.md/*_test.go/*.pb.go/*.test.tsx/go.mod/go.sum） | `TestCLIDocFileFilter`、`TestRunMultiRepoFilterAppliesToAllRepos` |
+| 展示顺序与重放顺序分离（display_order / display_group） | `TestBuildOrdersChangesByDisplayOrder`、`TestCheckStructureDisplayOrder` |
+| 跨仓仓库标签 + vscode://file 链接 + 独立源码根 | `TestBuildMultiRepoLabelsAndVSCodeLinks`、`TestFileLinkEscapesAndSkipsEmptyRoot`、`TestResolveSourceRootsDefaults/Overrides/Errors`、`TestCLIMultiRepoFillValidateRender` |
+| 更新反馈（文件顺序/函数分组/解释内容） | `internal/revdiff` 测试、`TestCLIDiffReportsIntentChanges`、watch 输出 |
+| 评审产物独立于业务提交 | README「评审产物不入库」、`.gitignore` 的 `.intent-review/` |
+
+### 复现记录（跨仓实测，2026-11-02）
+
+临时项目根下 web / api 两个仓库；文档 `repos[]` + `file_filter`（本次使用的 6 条规则）；
+三个 change 的 `display_order` 为 10/20/30，声明顺序为 page.ts、Helper、Handler：
+
+```text
+$ intent-review fill review.json --repo "$P" -o filled.json
+fill: ok → filled.json（1 条链，1 个意图，0 个警告）
+$ intent-review validate filled.json --repo "$P"
+validate: ok（1 条链，1 个意图，排除 8 项）
+$ intent-review render filled.json -o review.html --repo "$P" --source-root "web=$P/web"
+render: ok → review.html（1 条链，1 个意图，6 行 diff）
+
+页面顺序：page.ts → handler.go(Handler) → handler.go(Helper)
+链接：vscode://file/$P/web/page.ts:1、vscode://file/$P/api/handler.go:5、…/handler.go:3
+标签：页面入口 / 主流程 / 辅助函数
+覆盖：page.test.tsx、handler_test.go、api.pb.go、go.mod 均按过滤跳过
+
+$ intent-review diff filled.json revision.json
+意图 [chain-checkout] intent-001 修改（…）: 文件顺序、函数分组、解释内容
+```
+
 ## 复现记录（2026-10-29，本机）
 
 ```text

@@ -35,6 +35,9 @@ type Options struct {
 	Warnings []report.Error
 	// DisableHighlight 关闭语法高亮（调试/性能对照用）。
 	DisableHighlight bool
+	// SourceRoots 是 VS Code 跳转用的真实源码根，key 为仓库 id（单仓为 ""）。
+	// 为空表示不生成链接（避免指向重放快照）。
+	SourceRoots map[string]string
 }
 
 // Result 是渲染产物与附带诊断。
@@ -68,12 +71,21 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 
 	page := pageData{
 		Title:      doc.Meta.Title,
-		BaseCommit: doc.Meta.BaseCommit,
-		HeadRef:    doc.Meta.HeadRef,
 		LargeMode:  large,
 		TotalLines: totalLines,
 		CSS:        template.CSS(styleText),
 		JS:         template.JS(scriptText),
+	}
+	for _, id := range doc.RepoIDs() {
+		rv := repoView{ID: id, BaseCommit: doc.RepoBase(id), HeadRef: doc.RepoHead(id)}
+		rv.Name = id
+		if rv.Name == "" {
+			rv.Name = "repo"
+		}
+		if r, ok := doc.RepoByID(id); ok && strings.TrimSpace(r.Title) != "" {
+			rv.Name = r.Title
+		}
+		page.Repos = append(page.Repos, rv)
 	}
 	for ci := range doc.Chains {
 		c := &doc.Chains[ci]
@@ -85,12 +97,14 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 				Rationale: in.BusinessRationale, Risk: in.RiskNotes,
 				Number: ii + 1, Total: len(c.Intents),
 			}
-			for k := range in.Changes {
+			for _, k := range displayOrder(in.Changes) {
 				ch := &in.Changes[k]
 				anchor := fmt.Sprintf("c%d-i%d-ch%d", ci, ii, k+1)
 				cv2 := changeView{
 					Anchor: anchor, Number: k + 1, File: ch.File, Location: ch.Location,
+					Repo: ch.Repo, RepoLabel: repoLabel(doc, ch.Repo), DisplayGroup: ch.DisplayGroup,
 					StatePrev: ii, StateCur: ii + 1,
+					FileLink:    fileLink(opt.SourceRoots[ch.Repo], ch.File, changeLine(ch.OldStart, ch.NewStart)),
 					Explanation: ch.BusinessExplanation, HasExplanation: strings.TrimSpace(ch.BusinessExplanation) != "",
 					RenamedFrom: ch.RenamedFrom, IsNewFile: ch.NewFile,
 					IsDeleted: ch.Deleted, IsBinary: ch.Binary, IsPatchOnly: len(ch.Patch) > 0 && len(ch.Lines) == 0,
@@ -143,13 +157,20 @@ func withRows(c changeView, rows []Row) changeView {
 
 type pageData struct {
 	Title      string
-	BaseCommit string
-	HeadRef    string
 	LargeMode  bool
 	TotalLines int
+	Repos      []repoView
 	Chains     []chainView
 	CSS        template.CSS
 	JS         template.JS
+}
+
+// repoView 是侧栏底部展示的仓库信息。
+type repoView struct {
+	ID         string
+	Name       string
+	BaseCommit string
+	HeadRef    string
 }
 
 type chainView struct {
@@ -176,6 +197,7 @@ type warningView struct {
 	Code     string
 	Severity string
 	Message  string
+	Repo     string
 	File     string
 	Line     int
 	IsError  bool
@@ -184,6 +206,10 @@ type warningView struct {
 type changeView struct {
 	Anchor         string
 	Number         int
+	Repo           string
+	RepoLabel      string
+	DisplayGroup   string
+	FileLink       template.URL
 	StatePrev      int
 	StateCur       int
 	File           string
@@ -230,7 +256,7 @@ func (w *warningIndex) decorate(iv *intentView, chainID, intentID string) {
 	for _, e := range all {
 		iv.Warnings = append(iv.Warnings, warningView{
 			Code: e.Code, Severity: e.Severity, Message: firstNonEmpty(e.Message, e.Hint),
-			File: e.File, Line: e.Line, IsError: !e.Warning(),
+			Repo: e.Repo, File: e.File, Line: e.Line, IsError: !e.Warning(),
 		})
 	}
 	if len(iv.Warnings) > 0 {
@@ -244,6 +270,14 @@ func (w *warningIndex) decorate(iv *intentView, chainID, intentID string) {
 }
 
 func (w *warningIndex) flatten() []report.Error { return w.all }
+
+// repoLabel 返回页面上显示的仓库前缀（单仓为空）。
+func repoLabel(doc schema.Document, repoID string) string {
+	if !doc.MultiRepo() {
+		return ""
+	}
+	return repoID
+}
 
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {

@@ -21,6 +21,18 @@ description: 把一次代码变更拆成有序意图链，产出 intent-review J
 4. **不要提前泄露后续意图的代码**：意图 i 的 context/add 里不得出现意图 j>i 的变更。
 5. **链内严格线性**。完全独立的需求建独立 chain；有依赖的变更放同一链的先后意图。
 6. **一个意图只记增量**：可以撤销/改写前序意图引入的代码（表现为 `del` 或覆盖 `add`）。
+7. **修订直接合入原意图**：实现方案调整后，改原意图的 patch/解释并重新 `fill`，
+   **不要**在链尾追加“修正意图”让前面继续展示过期代码。需要留档的历史方案放
+   `.intent-review/history/` 或 git 历史里。
+8. **新增函数按调用关系拆分解释**：不要把一个新增文件当成默认解释单位。有调用关系的函数
+   串成一条“调用链”解释；独立函数各自一个 change（同一意图内可用多个 change 顺序追加）。
+9. **调用处交代新函数职责**：上层引用新函数时，`business_explanation` 要说明“它是做什么的”，
+   并提示实现在后面展开（如“实现在本意图第 3 个 change / 下一个意图”），让评审者能顺着读下去。
+10. **展示顺序由表及里**：用 `display_order` 把“页面入口 / 主流程 / 调用方”排在前面，
+   再排“辅助函数 / 策略 / 配置定义”；`display_group` 写分组名。**不要**为了展示顺序调整
+   `changes` 数组顺序——数组顺序就是重放顺序，会让行号语义变复杂。
+11. **跨仓按需声明**：同一需求涉及多个仓库时，顶层写 `repos[]`（id/path/base_commit/head_ref），
+   每个 change 写 `repo`；同一意图可以跨仓。单仓文档不要写 `repos`/`repo`。
 
 ## 流程
 
@@ -62,6 +74,35 @@ git diff <base> <head>            # 只看，不要直接按 hunk 分配给意�
 - 二进制文件：`"binary": true`，不需要 lines/patch，页面只展示说明块。
 
 ### 5. 输出骨架 JSON
+
+多仓与展示顺序（可选字段，按需使用）：
+
+```json
+{
+  "schema_version": "1.1",
+  "repos": [
+    { "id": "web", "path": "web", "base_commit": "<sha>", "head_ref": "<sha>" },
+    { "id": "api", "path": "api", "base_commit": "<sha>", "head_ref": "<sha>" }
+  ],
+  "file_filter": { "exclude": ["*.md", "*_test.go", "*.pb.go", "*.test.tsx", "go.mod", "go.sum"] },
+  "chains": [{
+    "id": "chain-x", "title": "需求",
+    "intents": [{
+      "id": "intent-001", "title": "…", "summary": "…",
+      "changes": [
+        { "repo": "web", "file": "src/page.ts", "location": "页面入口", "business_explanation": "…",
+          "display_order": 10, "display_group": "页面入口", "patch": ["…"] },
+        { "repo": "api", "file": "handler.go", "location": "Handler 调用方", "business_explanation": "…",
+          "display_order": 20, "display_group": "主流程", "patch": ["…"] },
+        { "repo": "api", "file": "handler.go", "location": "Helper 实现", "business_explanation": "…",
+          "display_order": 30, "display_group": "辅助函数", "patch": ["…"] }
+      ]
+    }]
+  }]
+}
+```
+
+单仓示例（完整骨架）：
 
 ```json
 {
@@ -126,7 +167,8 @@ intent-review validate review.filled.json --repo . --json
 | `SCHEMA_INVALID` | 结构/类型/必填项错误（含 patch-only 输入） | 补字段；先 `fill` 再 validate |
 | `SCHEMA_VERSION_UNSUPPORTED` | major 版本不匹配 | 用 `1.x` |
 | `MISSING_BUSINESS_EXPLANATION` | 业务解释为空 | 写“为什么” |
-| `DUPLICATE_INTENT_ID` / `DUPLICATE_CHAIN_ID` | id 重复 | 链内/全局唯一 |
+| `DUPLICATE_INTENT_ID` / `DUPLICATE_CHAIN_ID` / `DUPLICATE_REPO_ID` | id 重复 | 链内/全局/仓库唯一 |
+| `REPO_UNAVAILABLE` | 仓库目录/提交不可用，或 change.repo 未声明 | 检查 `repos[]` 的 path/base/head 与 `--repo` 项目根 |
 | `PATCH_PARSE_ERROR` | hunk 头/hunk 数量/行数不符 | 一个 change 一个 hunk；行首保留空格 |
 | `PATCH_CONTEXT_MISMATCH` | fill 应用 patch 时上下文不匹配 | 用上一状态重新生成该 hunk |
 | `CONTEXT_MISMATCH` | 重放时 before 与上一状态 after 不一致 | 检查意图顺序、行号、是否提前放入后续代码 |
@@ -147,6 +189,12 @@ intent-review render review.filled.json -o review.html --repo .
 
 - 你只输出 JSON；**不要手写 HTML/CSS/JS**。
 - 渲染失败按 stderr 提示修 JSON；校验失败仍会生成页面（诊断已标到节点），但交付前应修到 ok。
+- **每轮调整都重跑 fill → validate → render**，输出路径保持不变（浏览器刷新即可）；
+  用 `intent-review diff <旧材料> <新材料>` 或 `watch` 自动反馈说明“哪些意图变了、变在
+  文件顺序 / 函数分组 / 解释内容 / 代码内容”，不要只说“已更新”。
+- 评审产物放 `.intent-review/`（已 gitignore），业务代码照常 commit/push/部署，**不要提交评审产物**。
+- 需要 VS Code 跳转时给 `--source-root`（单仓 `<path>`，多仓 `<repo-id>=<path>`），
+  不指定时默认仓库 checkout，不会跳到重放快照。
 
 ## 反模式（明确错误）
 
@@ -157,11 +205,16 @@ intent-review render review.filled.json -o review.html --repo .
 - 缺业务解释时留空/写 `null`——schema 直接拒绝。
 - 为了过校验而缩小 context（只剩一行）或删掉 `del` 行——掩盖真实差异。
 - 同一文件同一意图多处修改塞进一个多 hunk 的 patch——拆成多个 change。
+- 方案调整后在链尾追加“修正意图”——直接改原意图并重新 fill，前面不要留过期代码。
+- 把一个新增文件整体当成一个 change——按调用关系拆成多个 change，各自解释。
+- 为了页面顺序调整 `changes` 数组顺序——用 `display_order`，数组顺序是重放语义。
+- 多仓时把仓库拼进 `file`（如 `web:src/a.ts`）——用 `repo` + `file`。
 
 ## 输出
 
 最终交付物：
 
-1. `review.filled.json`（canonical，含 lines/行号）
-2. `review.html`（`render` 生成）
+1. `.intent-review/review.filled.json`（canonical，含 lines/行号）
+2. `.intent-review/review.html`（`render` 生成，可刷新）
 3. 一句话说明：`validate` 的 `ok: true`（或仍存在的 warning 及原因）
+4. 本轮调整说明：改了哪些意图，以及是文件顺序 / 函数分组 / 解释内容 / 代码内容（用 `diff`/`watch` 输出）

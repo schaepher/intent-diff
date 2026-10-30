@@ -17,6 +17,7 @@ const (
 	CodeMissingExplanation  = "MISSING_BUSINESS_EXPLANATION"
 	CodeDuplicateIntentID   = "DUPLICATE_INTENT_ID"
 	CodeDuplicateChainID    = "DUPLICATE_CHAIN_ID"
+	CodeDuplicateRepoID     = "DUPLICATE_REPO_ID"
 	CodePatchParse          = "PATCH_PARSE_ERROR"
 	CodePatchContext        = "PATCH_CONTEXT_MISMATCH"
 	CodeContextMismatch     = "CONTEXT_MISMATCH"
@@ -41,6 +42,8 @@ type Error struct {
 	Severity string `json:"severity,omitempty"`
 	ChainID  string `json:"chain_id,omitempty"`
 	IntentID string `json:"intent_id,omitempty"`
+	// Repo 是多仓评审中的仓库 id（单仓评审为空）。
+	Repo string `json:"repo,omitempty"`
 	// ChangeIndex 是 0 基下标（与 JSON 内的数组一致）；人类可读输出显示 1 基。
 	ChangeIndex *int   `json:"change_index,omitempty"`
 	File        string `json:"file,omitempty"`
@@ -125,8 +128,11 @@ func FormatHuman(e Error) string {
 	}
 	if e.File != "" {
 		loc := e.File
+		if e.Repo != "" {
+			loc = e.Repo + ":" + loc
+		}
 		if e.Line > 0 {
-			loc = fmt.Sprintf("%s:%d", e.File, e.Line)
+			loc = fmt.Sprintf("%s:%d", loc, e.Line)
 		}
 		head = append(head, loc)
 	}

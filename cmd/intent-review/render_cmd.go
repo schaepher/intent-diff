@@ -13,17 +13,34 @@ import (
 	"intent-review/internal/validate"
 )
 
+// renderRequest 是 render/watch 共用的渲染参数。
+type renderRequest struct {
+	input       string
+	outPath     string
+	repoDir     string
+	maxLines    int
+	noHighlight bool
+	filter      *filterFlags
+	sourceRoots stringList
+}
+
+func newRenderFlags(fs *flag.FlagSet, req *renderRequest) {
+	req.filter = &filterFlags{}
+	fs.StringVar(&req.repoDir, "repo", "", "仓库目录/项目根（附带校验并把诊断标注到状态机节点）")
+	fs.StringVar(&req.outPath, "o", "", "输出 HTML 文件（必填）")
+	fs.IntVar(&req.maxLines, "max-lines", render.DefaultMaxLines, "大型评审降级阈值（总变更行数）")
+	fs.BoolVar(&req.noHighlight, "no-highlight", false, "关闭语法高亮（调试用）")
+	addFilterFlags(fs, req.filter)
+	addSourceRootFlag(fs, &req.sourceRoots)
+}
+
 func runRender(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	repoDir := fs.String("repo", "", "仓库目录（附带校验并把诊断标注到状态机节点）")
-	outPath := fs.String("o", "", "输出 HTML 文件（必填）")
-	maxLines := fs.Int("max-lines", render.DefaultMaxLines, "大型评审降级阈值（总变更行数）")
-	noHighlight := fs.Bool("no-highlight", false, "关闭语法高亮（调试用）")
-	ff := &filterFlags{}
-	addFilterFlags(fs, ff)
+	req := renderRequest{}
+	newRenderFlags(fs, &req)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "用法: intent-review render <file.json> -o <review.html> [--repo .] [--max-lines N] [--config F] [--exclude G] [--unexclude G]")
+		fmt.Fprintln(stderr, "用法: intent-review render <file.json> -o <review.html> [--repo .] [--max-lines N] [--config F] [--exclude G] [--unexclude G] [--source-root P]")
 		fs.PrintDefaults()
 	}
 	if err := parseFlagSet(fs, args); err != nil {
@@ -33,12 +50,13 @@ func runRender(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	if *outPath == "" {
+	if req.outPath == "" {
 		fmt.Fprintln(stderr, "render 需要 -o <review.html>")
 		fs.Usage()
 		return 2
 	}
-	return renderFile(fs.Arg(0), *outPath, *repoDir, *maxLines, *noHighlight, ff, stdout, stderr)
+	req.input = fs.Arg(0)
+	return renderFile(req, stdout, stderr)
 }
 
 // isValidateWarning 判断警告是否已经由 validate 打印过（避免重复）。
@@ -52,8 +70,8 @@ func isValidateWarning(printed []report.Error, w report.Error) bool {
 }
 
 // renderFile 是 render/watch 共用的渲染流程（含按需 fill 与校验）。
-func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, ff *filterFlags, stdout, stderr io.Writer) int {
-	doc, raw, code := loadDoc(input, stderr)
+func renderFile(req renderRequest, stdout, stderr io.Writer) int {
+	doc, raw, code := loadDoc(req.input, stderr)
 	if code != 0 {
 		return code
 	}
@@ -65,11 +83,11 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 		return report.ExitCode(res)
 	}
 	if hasPatchOnly(doc) {
-		if repoDir == "" {
+		if req.repoDir == "" {
 			fmt.Fprintln(stderr, "输入仍含 patch 且没有 lines；渲染前需要 --repo 自动填充")
 			return 2
 		}
-		filled, res, err := fill.Run(doc, raw, repoDir)
+		filled, res, err := fill.Run(doc, raw, req.repoDir)
 		if err != nil {
 			fmt.Fprintf(stderr, "填充无法执行: %v\n", err)
 			return 2
@@ -85,15 +103,20 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 		}
 	}
 
-	opts := render.Options{MaxLines: maxLines, DisableHighlight: noHighlight}
-	if repoDir != "" {
+	roots, err := resolveSourceRoots(doc, req.repoDir, req.sourceRoots)
+	if err != nil {
+		fmt.Fprintf(stderr, "源码根解析失败: %v\n", err)
+		return 2
+	}
+	opts := render.Options{MaxLines: req.maxLines, DisableHighlight: req.noHighlight, SourceRoots: roots}
+	if req.repoDir != "" {
 		// 没有 --repo 就没有覆盖检查，因此也不需要（不读取）文件过滤配置。
-		files, _, err := ff.build(repoDir)
+		files, _, err := req.filter.build(req.repoDir, doc.FileFilter)
 		if err != nil {
 			fmt.Fprintf(stderr, "文件过滤配置无效: %v\n", err)
 			return 2
 		}
-		vres, err := validate.Run(doc, repoDir, validate.Options{Files: files})
+		vres, err := validate.Run(doc, req.repoDir, validate.Options{Files: files})
 		if err != nil {
 			fmt.Fprintf(stderr, "校验无法执行（继续渲染）: %v\n", err)
 		} else {
@@ -117,8 +140,8 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 		}
 		fmt.Fprintln(stderr, report.FormatHuman(w))
 	}
-	if err := os.WriteFile(outPath, res.HTML, 0o644); err != nil {
-		fmt.Fprintf(stderr, "写出 %s 失败: %v\n", outPath, err)
+	if err := os.WriteFile(req.outPath, res.HTML, 0o644); err != nil {
+		fmt.Fprintf(stderr, "写出 %s 失败: %v\n", req.outPath, err)
 		return 2
 	}
 	large := ""
@@ -126,6 +149,6 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 		large = "，大型评审模式"
 	}
 	fmt.Fprintf(stderr, "render: ok → %s（%d 条链，%d 个意图，%d 行 diff%s）\n",
-		outPath, len(doc.Chains), countIntents(doc), res.TotalLines, large)
+		req.outPath, len(doc.Chains), countIntents(doc), res.TotalLines, large)
 	return 0
 }

@@ -501,3 +501,26 @@ table.diff {
   .node-label { display: none; }
   .timeline-node.is-active .node-label { display: inline; }
 }
+
+/* 跨仓 / 展示分组标签 */
+.repo-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 600;
+}
+.group-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+}
+.change-file a.file-link { color: inherit; text-decoration: underline dotted; }
+.change-file a.file-link:hover { color: #1d4ed8; }

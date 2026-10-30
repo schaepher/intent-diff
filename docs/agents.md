@@ -4,13 +4,19 @@
 所有 agent 只依赖三个命令与结构化错误：
 
 ```bash
-intent-review fill     review.json --repo . -o review.filled.json
-intent-review validate review.filled.json --repo . --json
-intent-review render   review.filled.json -o review.html --repo .
+intent-review fill     review.json --repo . -o .intent-review/review.filled.json
+intent-review validate .intent-review/review.filled.json --repo . --json
+intent-review render   .intent-review/review.filled.json -o .intent-review/review.html --repo . --source-root .
+# 更新反馈（哪几个意图变了：文件顺序/函数分组/解释内容/代码内容）
+intent-review diff <旧>.filled.json <新>.filled.json --json
 ```
 
 `intent-review` 可替换为 `go run ./cmd/intent-review`（在本仓库内）或已安装的二进制路径。
 agent **只写 JSON**，不写 HTML。
+
+跨仓需求：`--repo` 指向**项目根**（文档 `repos[].path` 相对它解析），一条链可跨仓；
+渲染时用 `--source-root <repo-id>=<path>` 指定各仓真实源码根（默认用仓库 checkout，
+不会跳到重放快照）。单仓时 `--source-root <path>`。
 
 覆盖检查默认排除 `*_test.go` / `**/vendor/**` / `**/node_modules/**`，测试文件不必写意图；
 目标仓库需要不同的评审范围时，让 agent 在 `validate`/`render` 上加 `--exclude <glob>` /

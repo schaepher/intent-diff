@@ -31,7 +31,7 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 	if code != 0 {
 		return code
 	}
-	files, cfgPath, err := ff.build(*repoDir)
+	files, cfgPath, err := ff.build(*repoDir, doc.FileFilter)
 	if err != nil {
 		fmt.Fprintf(stderr, "文件过滤配置无效: %v\n", err)
 		return 2

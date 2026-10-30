@@ -18,7 +18,16 @@ type Repo struct {
 // NewGitRepo 创建临时仓库并提交初始文件（map：仓库相对路径 → 内容）。
 func NewGitRepo(t *testing.T, files map[string]string) *Repo {
 	t.Helper()
-	dir := t.TempDir()
+	return NewGitRepoAt(t, t.TempDir(), files)
+}
+
+// NewGitRepoAt 在指定目录（不存在则创建）初始化仓库并提交初始文件。
+// 用于跨仓评审测试（项目根下的多个子仓库）。
+func NewGitRepoAt(t *testing.T, dir string, files map[string]string) *Repo {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
 	r := &Repo{T: t, Dir: dir}
 	r.git("init", "-q", "-b", "main")
 	r.git("config", "user.name", "test")
@@ -29,6 +38,12 @@ func NewGitRepo(t *testing.T, files map[string]string) *Repo {
 	}
 	r.Commit("init")
 	return r
+}
+
+// OpenRepo 复用已存在的仓库目录（不执行 init/初始提交）。
+func OpenRepo(t *testing.T, dir string) *Repo {
+	t.Helper()
+	return &Repo{T: t, Dir: dir}
 }
 
 // Write 写入工作区文件。

@@ -23,8 +23,10 @@
       {{end}}
     </nav>
     <div class="sidebar-foot">
-      <div class="foot-row"><span class="foot-label">base</span><code>{{.BaseCommit}}</code></div>
-      <div class="foot-row"><span class="foot-label">head</span><code>{{.HeadRef}}</code></div>
+      {{range .Repos}}
+      <div class="foot-row"><span class="foot-label">{{.Name}} base</span><code>{{.BaseCommit}}</code></div>
+      <div class="foot-row"><span class="foot-label">{{.Name}} head</span><code>{{.HeadRef}}</code></div>
+      {{end}}
       <div class="foot-row foot-hint">← → 切换意图</div>
     </div>
   </aside>
@@ -67,7 +69,7 @@
               <li class="warning-item{{if .IsError}} is-error{{end}}">
                 <span class="warning-code">{{.Code}}</span>
                 <span class="warning-msg">{{.Message}}</span>
-                {{if .File}}<span class="warning-loc">{{.File}}{{if .Line}}:{{.Line}}{{end}}</span>{{end}}
+                {{if .File}}<span class="warning-loc">{{if .Repo}}{{.Repo}}:{{end}}{{.File}}{{if .Line}}:{{.Line}}{{end}}</span>{{end}}
               </li>
               {{end}}
             </ul>
@@ -80,7 +82,9 @@
             <section class="change" id="change-{{$ch.Anchor}}" data-change-index="{{$ch.Number}}">
               <div class="change-head">
                 <span class="change-index" title="change 序号（深链 #chain/intent/{{$ch.Number}}）">#{{$ch.Number}}</span>
-                <span class="change-file">{{$ch.File}}</span>
+                {{if $ch.RepoLabel}}<span class="repo-tag">{{$ch.RepoLabel}}</span>{{end}}
+                <span class="change-file">{{if $ch.FileLink}}<a class="file-link" href="{{$ch.FileLink}}" title="在 VS Code 中打开真实源码">{{$ch.File}}</a>{{else}}{{$ch.File}}{{end}}</span>
+                {{if $ch.DisplayGroup}}<span class="group-tag">{{$ch.DisplayGroup}}</span>{{end}}
                 {{if $ch.IsNewFile}}<span class="tag tag-new">新增文件</span>{{end}}
                 {{if $ch.IsDeleted}}<span class="tag tag-del">删除文件</span>{{end}}
                 {{if $ch.RenamedFrom}}<span class="tag tag-ren">重命名自 {{$ch.RenamedFrom}}</span>{{end}}

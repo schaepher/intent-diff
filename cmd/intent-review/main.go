@@ -32,6 +32,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runSchema(rest, stdout, stderr)
 	case "watch":
 		return runWatch(rest, stdout, stderr)
+	case "diff":
+		return runDiff(rest, stdout, stderr)
 	case "version", "-v", "--version":
 		fmt.Fprintf(stdout, "intent-review %s\n", version)
 		return 0
@@ -51,9 +53,10 @@ func usage(w io.Writer) {
 用法:
   intent-review validate <file.json> [--repo .] [--json] [--config F] [--exclude G] [--unexclude G]
   intent-review fill     <file.json> [--repo .] [-o <filled.json>]
-  intent-review render   <file.json> -o <review.html> [--repo .] [--max-lines N] [--exclude G]
+  intent-review render   <file.json> -o <review.html> [--repo .] [--max-lines N] [--source-root P]
+  intent-review watch    <file.json> -o <review.html> [--repo .] [--max-lines N] [--source-root P]
+  intent-review diff     <before.json> <after.json> [--json]
   intent-review schema   [--output schema.json]
-  intent-review watch    <file.json> -o <review.html> [--repo .] [--max-lines N] [--exclude G]
   intent-review version
 
 命令:
@@ -61,12 +64,21 @@ func usage(w io.Writer) {
   fill      把 patch 转为结构化 lines 与行号；不改语义字段
   render    生成自包含 HTML（--repo 时附带校验并把诊断标注到状态机节点）
   schema    输出 JSON Schema
-  watch     文件变化时自动重渲染
+  watch     文件变化时自动重渲染，并说明本次更新影响了哪些意图
+  diff      比较两版评审文档：意图增删/文件顺序/函数分组/解释内容
 
 退出码: 0 成功 / 1 校验失败 / 2 用法或 IO 错误 / 3 schema 版本不支持
 
+跨仓评审:
+  文档 repos[] 声明多个仓库（id/path/base_commit/head_ref），change.repo 指定所属仓库；
+  --repo 是项目根（repos[].path 相对它解析）。
+
 文件过滤（validate/render/watch 的覆盖检查）:
-  内置排除 *_test.go、**/vendor/**、**/node_modules/**；
-  用 --exclude 追加、--unexclude 删除，或在 repo 目录放 .intent-review.json（--config 指定路径）。
+  内置排除 *_test.go、**/vendor/**、**/node_modules/**；文档 file_filter、
+  repo 目录的 .intent-review.json（--config 指定路径）、--exclude/--unexclude 依次叠加。
+
+源码跳转:
+  --source-root <path>（单仓）或 --source-root <repo-id>=<path>（多仓）指定真实源码根，
+  页面文件路径用 vscode://file/… 打开；不指定时默认仓库 checkout 路径。
 `)
 }

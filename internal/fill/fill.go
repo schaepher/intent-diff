@@ -18,19 +18,27 @@ func Run(doc schema.Document, raw []byte, repoDir string) ([]byte, report.Result
 	if report.HasBlocking(errs) {
 		return nil, report.NewResult(errs), nil
 	}
-	repo, err := replay.Open(repoDir)
+	project, err := replay.OpenProject(repoDir, doc.Repos)
 	if err != nil {
 		return nil, report.Result{}, err
 	}
 	updates := map[key]changeUpdate{}
 	for ci := range doc.Chains {
 		chain := &doc.Chains[ci]
-		base, err := repo.Resolve(chain.EffBaseCommit(doc.Meta))
-		if err != nil {
-			return nil, report.Result{}, fmt.Errorf("解析链 %s 的 base_commit 失败: %w", chain.ID, err)
+		bases := map[string]string{}
+		for _, id := range project.IDs() {
+			repo, err := project.Repo(id)
+			if err != nil {
+				return nil, report.Result{}, err
+			}
+			base, err := repo.Resolve(chain.EffBaseFor(doc, id))
+			if err != nil {
+				return nil, report.Result{}, fmt.Errorf("解析链 %s 在仓库 %s 的 base_commit 失败: %w", chain.ID, id, err)
+			}
+			bases[id] = base
 		}
-		eng := replay.NewEngine(repo, base)
-		chainErrs, ok := fillChain(ci, eng, chain, updates)
+		es := replay.NewEngines(project, bases)
+		chainErrs, ok := fillChain(ci, es, chain, updates)
 		errs = append(errs, chainErrs...)
 		if !ok {
 			continue
@@ -47,13 +55,23 @@ func Run(doc schema.Document, raw []byte, repoDir string) ([]byte, report.Result
 	return out, res, nil
 }
 
-func fillChain(chainIdx int, eng *replay.Engine, chain *schema.Chain, updates map[key]changeUpdate) ([]report.Error, bool) {
+func fillChain(chainIdx int, es *replay.Engines, chain *schema.Chain, updates map[key]changeUpdate) ([]report.Error, bool) {
 	var errs []report.Error
 	for ii := range chain.Intents {
 		in := &chain.Intents[ii]
 		for k := range in.Changes {
 			ch := &in.Changes[k]
 			ctx := replay.Ctx{ChainID: chain.ID, IntentID: in.ID, ChangeIndex: k}
+			eng := es.Engine(ch.Repo)
+			if eng == nil {
+				errs = append(errs, report.Error{
+					Code: report.CodeSchemaInvalid, ChainID: chain.ID, IntentID: in.ID,
+					ChangeIndex: report.Index(k), Repo: ch.Repo, File: ch.File,
+					Message: fmt.Sprintf("change 引用了未声明的仓库 %q", ch.Repo),
+					Hint:    "在文档 repos[] 中声明该仓库，或去掉 change.repo",
+				})
+				return errs, false
+			}
 			if ch.Binary {
 				_ = eng.Apply(ctx, ch)
 				continue
@@ -72,7 +90,7 @@ func fillChain(chainIdx int, eng *replay.Engine, chain *schema.Chain, updates ma
 			if len(ch.Lines) == 0 {
 				errs = append(errs, report.Error{
 					Code: report.CodeSchemaInvalid, ChainID: chain.ID, IntentID: in.ID,
-					ChangeIndex: report.Index(k), File: ch.File,
+					ChangeIndex: report.Index(k), Repo: ch.Repo, File: ch.File,
 					Message: "change 既无 lines 也无 patch",
 					Hint:    "为每个 change 提供 patch（unified diff 行数组）或完整的 lines/行号。",
 				})
@@ -102,13 +120,13 @@ func applyPatch(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) (*report.
 	if perr != nil {
 		perr.ChainID, perr.IntentID = ctx.ChainID, ctx.IntentID
 		withChange := perr.WithChange(ctx.ChangeIndex)
-		withChange.File = ch.File
+		withChange.Repo, withChange.File = ch.Repo, ch.File
 		return nil, &withChange
 	}
 	if ch.NewFile && h.OldStart != 0 {
 		return nil, &report.Error{
 			Code: report.CodePatchParse, ChainID: ctx.ChainID, IntentID: ctx.IntentID,
-			ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File,
+			ChangeIndex: report.Index(ctx.ChangeIndex), Repo: ch.Repo, File: ch.File,
 			Message: "new_file 的 patch hunk 头应为 @@ -0,0 +1,N @@",
 		}
 	}
@@ -141,7 +159,7 @@ func tryRelocate(eng *replay.Engine, ctx replay.Ctx, ch *schema.Change) *report.
 	pos := positions[0]
 	e := report.Error{
 		Code: report.CodePatchContext, Severity: report.SeverityWarning,
-		ChainID: ctx.ChainID, IntentID: ctx.IntentID, ChangeIndex: report.Index(ctx.ChangeIndex), File: ch.File,
+		ChainID: ctx.ChainID, IntentID: ctx.IntentID, ChangeIndex: report.Index(ctx.ChangeIndex), Repo: ch.Repo, File: ch.File,
 		Message: fmt.Sprintf("patch 上下文在 old_start=%d 处不匹配，但该块在 State 中唯一出现于第 %d 行，已按实际位置回填",
 			ch.OldStart, pos+1),
 		Hint: "建议让 agent 用上一状态重新生成 patch（行号随前序 change 推进）。",
