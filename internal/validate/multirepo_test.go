@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"intent-review/internal/filefilter"
 	"intent-review/internal/report"
 	"intent-review/internal/schema"
 	"intent-review/internal/testutil"
@@ -123,5 +124,28 @@ func TestRunMultiRepoFilterAppliesToAllRepos(t *testing.T) {
 	}
 	if !res.OK {
 		t.Fatalf("默认排除 *_test.go 应生效: %+v", res.Errors)
+	}
+}
+
+// 覆盖检查被过滤跳过的路径要回传（页面展示评审范围），并带命中的规则。
+func TestRunReportsExcludedPathsAndRules(t *testing.T) {
+	project, doc := multiRepoFixture(t)
+	web := testutil.OpenRepo(t, filepath.Join(project, "web"))
+	web.Write("src/a.test.tsx", "test\n")
+	doc.Repos[0].HeadRef = web.Commit("test file")
+	opt := Options{Files: filefilter.New([]string{"*.test.tsx", "*_test.go"})}
+	res, err := Run(doc, project, opt)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("errors = %+v", res.Errors)
+	}
+	if strings.Join(res.ExcludeRules, ",") != "*.test.tsx,*_test.go" {
+		t.Fatalf("rules = %v", res.ExcludeRules)
+	}
+	if len(res.Excluded) != 1 || res.Excluded[0].Repo != "web" ||
+		res.Excluded[0].File != "src/a.test.tsx" || res.Excluded[0].Rule != "*.test.tsx" {
+		t.Fatalf("excluded = %+v", res.Excluded)
 	}
 }

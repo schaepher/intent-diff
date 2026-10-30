@@ -4,11 +4,20 @@
 所有 agent 只依赖三个命令与结构化错误：
 
 ```bash
+# 统一入口：fill → validate → render（产物固定 .intent-review/review.html，页面可直接刷新）
+intent-review build review.json --repo . --source-root .
+# 更新摘要：build/watch 会自动打印；要对比任意两版材料用 diff
+intent-review diff <旧>.filled.json <新>.filled.json --json
+# 清理评审产物（只删产物目录）
+intent-review clean
+```
+
+需要单步排查时仍可单独执行：
+
+```bash
 intent-review fill     review.json --repo . -o .intent-review/review.filled.json
 intent-review validate .intent-review/review.filled.json --repo . --json
 intent-review render   .intent-review/review.filled.json -o .intent-review/review.html --repo . --source-root .
-# 更新反馈（哪几个意图变了：文件顺序/函数分组/解释内容/代码内容）
-intent-review diff <旧>.filled.json <新>.filled.json --json
 ```
 
 `intent-review` 可替换为 `go run ./cmd/intent-review`（在本仓库内）或已安装的二进制路径。
@@ -17,6 +26,9 @@ agent **只写 JSON**，不写 HTML。
 跨仓需求：`--repo` 指向**项目根**（文档 `repos[].path` 相对它解析），一条链可跨仓；
 渲染时用 `--source-root <repo-id>=<path>` 指定各仓真实源码根（默认用仓库 checkout，
 不会跳到重放快照）。单仓时 `--source-root <path>`。
+
+变更要写稳定 `id`（修订时不变），调用方用 `references` 链接到后面的实现分组；页面会展示
+本次生效的排除规则与被跳过的文件（`validate --json` 的 `exclude_rules`/`excluded[]`）。
 
 覆盖检查默认排除 `*_test.go` / `**/vendor/**` / `**/node_modules/**`，测试文件不必写意图；
 目标仓库需要不同的评审范围时，让 agent 在 `validate`/`render` 上加 `--exclude <glob>` /

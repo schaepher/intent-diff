@@ -24,14 +24,20 @@ type renderRequest struct {
 	sourceRoots stringList
 }
 
-func newRenderFlags(fs *flag.FlagSet, req *renderRequest) {
+// newCommonFlags 注册 render/build/watch 共用的参数（不含输出路径）。
+func newCommonFlags(fs *flag.FlagSet, req *renderRequest) {
 	req.filter = &filterFlags{}
 	fs.StringVar(&req.repoDir, "repo", "", "仓库目录/项目根（附带校验并把诊断标注到状态机节点）")
-	fs.StringVar(&req.outPath, "o", "", "输出 HTML 文件（必填）")
 	fs.IntVar(&req.maxLines, "max-lines", render.DefaultMaxLines, "大型评审降级阈值（总变更行数）")
 	fs.BoolVar(&req.noHighlight, "no-highlight", false, "关闭语法高亮（调试用）")
 	addFilterFlags(fs, req.filter)
 	addSourceRootFlag(fs, &req.sourceRoots)
+}
+
+// newRenderFlags 在通用参数上追加 -o。
+func newRenderFlags(fs *flag.FlagSet, req *renderRequest) {
+	newCommonFlags(fs, req)
+	fs.StringVar(&req.outPath, "o", "", "输出 HTML 文件（必填）")
 }
 
 func runRender(args []string, stdout, stderr io.Writer) int {
@@ -123,6 +129,8 @@ func renderFile(req renderRequest, stdout, stderr io.Writer) int {
 			printDiagnostics(vres, false, stdout, stderr)
 			opts.Warnings = append(opts.Warnings, vres.Warnings...)
 			opts.Warnings = append(opts.Warnings, vres.Errors...)
+			opts.ExcludeRules = vres.ExcludeRules
+			opts.Excluded = vres.Excluded
 			if !vres.OK {
 				fmt.Fprintf(stderr, "render: 校验未通过（%d 个错误），诊断已标注到状态机节点\n", len(vres.Errors))
 			}

@@ -34,6 +34,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runWatch(rest, stdout, stderr)
 	case "diff":
 		return runDiff(rest, stdout, stderr)
+	case "build":
+		return runBuild(rest, stdout, stderr)
+	case "clean":
+		return runClean(rest, stdout, stderr)
 	case "version", "-v", "--version":
 		fmt.Fprintf(stdout, "intent-review %s\n", version)
 		return 0
@@ -55,6 +59,8 @@ func usage(w io.Writer) {
   intent-review fill     <file.json> [--repo .] [-o <filled.json>]
   intent-review render   <file.json> -o <review.html> [--repo .] [--max-lines N] [--source-root P]
   intent-review watch    <file.json> -o <review.html> [--repo .] [--max-lines N] [--source-root P]
+  intent-review build    <file.json> --repo <项目根> [--out-dir .intent-review]
+  intent-review clean    [--out-dir .intent-review]
   intent-review diff     <before.json> <after.json> [--json]
   intent-review schema   [--output schema.json]
   intent-review version
@@ -66,6 +72,8 @@ func usage(w io.Writer) {
   schema    输出 JSON Schema
   watch     文件变化时自动重渲染，并说明本次更新影响了哪些意图
   diff      比较两版评审文档：意图增删/文件顺序/函数分组/解释内容
+  build     fill → validate → render 一次完成，产物固定写到 --out-dir（默认 .intent-review）
+  clean     删除评审产物目录（只清理产物，不影响业务代码）
 
 退出码: 0 成功 / 1 校验失败 / 2 用法或 IO 错误 / 3 schema 版本不支持
 

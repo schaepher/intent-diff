@@ -135,3 +135,17 @@ func TestEmptyAndNilListMatchNothing(t *testing.T) {
 	l.Add("x")
 	l.Remove("x")
 }
+
+func TestMatchReasonReturnsHitPattern(t *testing.T) {
+	l := Default()
+	if rule, ok := l.MatchReason("pkg/a_test.go"); !ok || rule != "*_test.go" {
+		t.Fatalf("MatchReason = %q,%v", rule, ok)
+	}
+	if rule, ok := l.MatchReason("pkg/a.go"); ok || rule != "" {
+		t.Fatalf("未命中时不应返回规则: %q,%v", rule, ok)
+	}
+	custom := New([]string{"docs/**"})
+	if rule, ok := custom.MatchReason("docs/a.md"); !ok || rule != "docs/**" {
+		t.Fatalf("MatchReason = %q,%v", rule, ok)
+	}
+}

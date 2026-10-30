@@ -93,9 +93,18 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
 18. **源码链接不猜**：`--source-root`（单仓 `<path>` / 多仓 `<id>=<path>`，可重复）> `repos[].source_root`
     > 仓库 checkout 路径（项目根 + `repos[].path`）；没有源码根（含 render 无 `--repo`）时不生成链接。
     链接是 `vscode://file/<abs>:<line>`，必须用 `template.URL`（html/template 会拒绝非 http scheme）。
-19. **更新反馈与产物**：`diff`/`watch` 的变更说明只读比较文档，不参与校验；匹配 change 用
-    `(repo,file,location)` 而不是数组下标（增删会错位）。评审产物放 `.intent-review/`（已 gitignore），
-    不随业务代码提交。
+19. **更新反馈与产物**：`diff`/`watch` 的变更说明只读比较文档，不参与校验；匹配 change 优先
+    `change.id`（稳定标识），没有 id 才退回 `(repo,file,location)`（增删会错位）。评审产物放
+    `.intent-review/`（已 gitignore），不随业务代码提交。
+20. **`build` 是唯一生成入口**：必须复用 `fill.Run` / `validate.Run` / `render.Build`，不得另写一套
+    重放/校验；产物固定 `<out-dir>/review.filled.json` 与 `review.html`；校验失败仍写页面（退出码 1），
+    填充失败保留上一版产物。`clean` 只删白名单目录（名为 `.intent-review` 或含两个产物文件），
+    别把守卫放宽成任意路径（agent 会传 `--out-dir .`）。
+21. **稳定 change 标识**：`change.id` 可选但修订时必须不变，意图内唯一（`DUPLICATE_CHANGE_ID`）；
+    `references` 解析不到目标时渲染成纯文本，不要编造锚点；深链/`change_index` 仍是声明下标。
+22. **评审范围回传契约**：`validate.Result.ExcludeRules/Excluded` 是页面“评审范围”面板的唯一数据源
+    （`Excluded.Rule` 来自 `filefilter.MatchReason`）；repo 按声明顺序、路径排序保证确定性。
+    渲染层只读展示，不得据此改变重放/覆盖语义。
 
 ## 常用命令（提交前必须过）
 
@@ -172,7 +181,10 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 | `internal/filefilter`（默认排除项/模式语义/配置格式） | validate 覆盖测试、CLI 测试（config/--exclude/--unexclude/退出码 2）、README「文件过滤」与实现约定、AGENTS 契约 15、SKILL 提示 |
 | `internal/replay/project.go`（多仓 Project/Engines 路由） | fill/validate 多仓测试、CLI 跨仓测试、README「跨仓评审」、AGENTS 契约 16 |
 | `internal/render`（SourceRoots/展示顺序/仓库标签） | `render/multirepo_test.go`、模板与 CSS、ui-check（自包含断言）、README「展示顺序」「VS Code 跳转」 |
-| `internal/revdiff`（比较维度/匹配键） | `revdiff` 测试、`diff` CLI 测试、watch 输出、README「更新与反馈」 |
+| `internal/revdiff`（比较维度/匹配键） | `revdiff` 测试、`diff` CLI 测试、watch/build 摘要、README「更新与反馈」 |
+| `internal/validate` 的 `ExcludeRules/Excluded`（评审范围回传） | `render/checklist_test.go` 的 scope 面板、`multirepo_test.go`、`validate --json` 契约、README「文件过滤」 |
+| `cmd/intent-review/build_cmd.go`（build/clean 入口） | build CLI 测试、`main.go` help、README「更新与反馈」「评审产物不入库」、AGENTS 契约 20 |
+| `internal/render`（分组标题/引用/行号链接/scope） | `render/checklist_test.go`、模板与 CSS、ui-check（自包含断言） |
 | CLI 参数/子命令 | `parseFlagSet`（flag 与位置参数可交错）、help 文本、CLI 测试的退出码 |
 | `examples/demo` 的 fixture | **head 必须是可编译的完整包**（`go build ./...` 会编译它），同步 `review.json` 的 patch 行号 |
 | `skills/intent-review/SKILL.md` | README 命令/错误码、`docs/agents.md` 的调用模板 |
@@ -196,7 +208,14 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 - **`display_order` 只给渲染用**：在 replay/fill 里按它排序会破坏“上一意图状态 → 当前意图”的行号语义。
 - **`vscode://` 链接要用 `template.URL`**：html/template 的 URL 过滤器只放行 http/https 等 scheme，
   直接写 string 会变成 `#ZgotmplZ`。
-- **revdiff 匹配用 (repo,file,location)**：用数组下标匹配时，一旦插入/删除 change 就会整段误报“解释变了”。
+- **revdiff 匹配优先 `change.id`**：没有 id 才用 `(repo,file,location)`；用数组下标匹配时，
+  一旦插入/删除 change 就会整段误报“解释变了”。
+- **`build` 不要复制管线**：它必须调用 `fill.Run`/`validate.Run`/`render.Build`；另写一套会出现
+  “build 通过、validate 失败”的分叉。校验失败也要写页面（页面是发现问题的地方）。
+- **`clean` 的白名单不能放宽**：只删 `.intent-review` 或含 `review.filled.json`/`review.html` 的目录；
+  agent 传 `--out-dir .` 时必须拒绝。
+- **页面 scope 断言别查 CSS 类名**：`scope-summary` 等类名在 CSS 里也有，断言要查
+  `<details class="scope">` / `<code>…</code>` 这类真实标记。
 - **排除列表不是“放宽校验”的开关**：它只跳过覆盖检查；别把 `filefilter.Match` 塞进 replay/compareHead，
   否则 agent 能把错误内容写进测试文件而 validate 仍报 ok。改默认排除项要同步 SKILL，否则 agent 会少写意图。
 - **sticky 失效先查祖先 overflow**：`.intent-timeline` 的祖先（`.main`/`.section`）不能有

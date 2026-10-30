@@ -30,6 +30,8 @@ type IntentChange struct {
 	FilesRemoved []string `json:"files_removed,omitempty"`
 	OrderBefore  []string `json:"order_before,omitempty"`
 	OrderAfter   []string `json:"order_after,omitempty"`
+	// ChangedChanges 逐 change 说明改了什么（优先用稳定 id）：如 "ch-002(解释内容)"。
+	ChangedChanges []string `json:"changed_changes,omitempty"`
 }
 
 // Empty 表示两版文档没有意图级变化。
@@ -37,57 +39,6 @@ func (r Report) Empty() bool { return len(r.Intents) == 0 }
 
 // JSON 返回结构化报告。
 func (r Report) JSON() ([]byte, error) { return json.MarshalIndent(r, "", "  ") }
-
-// 维度名称（人类可读）。
-var dimensionLabels = map[string]string{
-	"title":       "标题",
-	"summary":     "意图摘要",
-	"files":       "文件集合",
-	"order":       "文件顺序",
-	"group":       "函数分组",
-	"explanation": "解释内容",
-	"diff":        "代码内容",
-}
-
-var dimensionOrder = []string{"title", "summary", "files", "order", "group", "explanation", "diff"}
-
-// FormatHuman 生成可直接贴给评审者的变更说明。
-func (r Report) FormatHuman() string {
-	if r.Empty() {
-		return "没有意图级变化"
-	}
-	var b strings.Builder
-	for _, ic := range r.Intents {
-		b.WriteString(intentHead(ic))
-		b.WriteString("\n")
-		for _, f := range ic.FilesAdded {
-			fmt.Fprintf(&b, "  + %s\n", f)
-		}
-		for _, f := range ic.FilesRemoved {
-			fmt.Fprintf(&b, "  - %s\n", f)
-		}
-		if len(ic.OrderBefore) != 0 || len(ic.OrderAfter) != 0 {
-			fmt.Fprintf(&b, "  顺序: %s → %s\n", strings.Join(ic.OrderBefore, ", "), strings.Join(ic.OrderAfter, ", "))
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func intentHead(ic IntentChange) string {
-	label := map[string]string{"added": "新增", "removed": "删除", "modified": "修改"}[ic.Status]
-	head := fmt.Sprintf("意图 [%s] %s %s", ic.ChainID, ic.IntentID, label)
-	if ic.Title != "" {
-		head += "（" + ic.Title + "）"
-	}
-	if len(ic.Dimensions) > 0 {
-		labels := make([]string, 0, len(ic.Dimensions))
-		for _, d := range ic.Dimensions {
-			labels = append(labels, dimensionLabels[d])
-		}
-		head += ": " + strings.Join(labels, "、")
-	}
-	return head
-}
 
 type intentKey struct{ chain, intent string }
 
@@ -148,34 +99,43 @@ func compareIntent(k intentKey, prev, next schema.Intent) (IntentChange, bool) {
 	if prev.Summary != next.Summary {
 		dims["summary"] = true
 	}
-	oldChanges, oldSeq := indexChanges(prev.Changes)
-	newChanges, newSeq := indexChanges(next.Changes)
-	for key, nc := range newChanges {
-		oc, ok := oldChanges[key]
+	oldIdx, newIdx := indexChanges(prev.Changes), indexChanges(next.Changes)
+	matched := map[string]bool{}
+	for _, nc := range newIdx.entries {
+		oc, ok := matchChange(oldIdx, nc)
 		if !ok {
 			ic.FilesAdded = append(ic.FilesAdded, nc.label)
 			dims["files"] = true
 			continue
 		}
+		matched[oc.key] = true
+		var per []string
 		if oc.ch.DisplayGroup != nc.ch.DisplayGroup {
 			dims["group"] = true
+			per = append(per, "函数分组")
 		}
 		if oc.ch.BusinessExplanation != nc.ch.BusinessExplanation {
 			dims["explanation"] = true
+			per = append(per, "解释内容")
 		}
 		if changeBodyDiffers(oc.ch, nc.ch) {
 			dims["diff"] = true
+			per = append(per, "代码内容")
 		}
-		delete(oldChanges, key)
+		if len(per) > 0 {
+			ic.ChangedChanges = append(ic.ChangedChanges, fmt.Sprintf("%s(%s)", changeRef(nc.ch), strings.Join(per, "/")))
+		}
 	}
-	for _, oc := range oldChanges {
-		ic.FilesRemoved = append(ic.FilesRemoved, oc.label)
-		dims["files"] = true
+	for _, oc := range oldIdx.entries {
+		if !matched[oc.key] {
+			ic.FilesRemoved = append(ic.FilesRemoved, oc.label)
+			dims["files"] = true
+		}
 	}
 	// 文件顺序：只在集合相同时比较展示顺序，避免重命名/新增带来的噪声。
-	if len(ic.FilesAdded) == 0 && len(ic.FilesRemoved) == 0 && !sameSeq(oldSeq, newSeq) {
+	if len(ic.FilesAdded) == 0 && len(ic.FilesRemoved) == 0 && !sameSeq(oldIdx.seq, newIdx.seq) {
 		dims["order"] = true
-		ic.OrderBefore, ic.OrderAfter = oldSeq, newSeq
+		ic.OrderBefore, ic.OrderAfter = oldIdx.seq, newIdx.seq
 	}
 	if len(dims) == 0 {
 		return ic, false
@@ -190,25 +150,55 @@ func compareIntent(k intentKey, prev, next schema.Intent) (IntentChange, bool) {
 	return ic, true
 }
 
-// indexChanges 按 (repo,file,location) 建索引，重复三元组追加序号；
-// 同时返回按展示顺序排列的标签序列。
-func indexChanges(changes []schema.Change) (map[string]changeEntry, []string) {
-	idx := map[string]changeEntry{}
-	seq := make([]string, 0, len(changes))
+// changeIndex 是意图内 change 的索引：按 (repo,file,location) 与稳定 id 双路匹配。
+type changeIndex struct {
+	byKey   map[string]changeEntry
+	byID    map[string]changeEntry
+	entries []changeEntry // 展示顺序
+	seq     []string      // 展示顺序的标签
+}
+
+// indexChanges 建索引；重复三元组追加序号区分（增删场景下仍能稳定匹配）。
+func indexChanges(changes []schema.Change) changeIndex {
+	idx := changeIndex{byKey: map[string]changeEntry{}, byID: map[string]changeEntry{}}
 	for _, k := range displaySequence(changes) {
 		ch := changes[k]
 		base := ch.Repo + "\x00" + ch.File + "\x00" + ch.Location
 		key := base
 		for n := 2; ; n++ {
-			if _, ok := idx[key]; !ok {
+			if _, ok := idx.byKey[key]; !ok {
 				break
 			}
 			key = fmt.Sprintf("%s#%d", base, n)
 		}
-		idx[key] = changeEntry{key: key, label: changeLabel(ch), ch: ch}
-		seq = append(seq, changeLabel(ch))
+		entry := changeEntry{key: key, label: changeLabel(ch), ch: ch}
+		idx.byKey[key] = entry
+		idx.entries = append(idx.entries, entry)
+		idx.seq = append(idx.seq, entry.label)
+		if id := strings.TrimSpace(ch.ID); id != "" {
+			idx.byID[id] = entry
+		}
 	}
-	return idx, seq
+	return idx
+}
+
+// matchChange 优先按稳定 id 匹配（改了 location/文件顺序也能对上），否则退回三元组。
+func matchChange(old changeIndex, nc changeEntry) (changeEntry, bool) {
+	if id := strings.TrimSpace(nc.ch.ID); id != "" {
+		if oc, ok := old.byID[id]; ok {
+			return oc, true
+		}
+	}
+	oc, ok := old.byKey[nc.key]
+	return oc, ok
+}
+
+// changeRef 返回摘要里的 change 标识（优先稳定 id）。
+func changeRef(ch schema.Change) string {
+	if id := strings.TrimSpace(ch.ID); id != "" {
+		return id
+	}
+	return changeLabel(ch)
 }
 
 // changeLabel 生成变更标识：repo:file（location）。同一文件多个 change 时靠 location 区分。

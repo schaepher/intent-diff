@@ -18,6 +18,7 @@ const (
 	CodeDuplicateIntentID   = "DUPLICATE_INTENT_ID"
 	CodeDuplicateChainID    = "DUPLICATE_CHAIN_ID"
 	CodeDuplicateRepoID     = "DUPLICATE_REPO_ID"
+	CodeDuplicateChangeID   = "DUPLICATE_CHANGE_ID"
 	CodePatchParse          = "PATCH_PARSE_ERROR"
 	CodePatchContext        = "PATCH_CONTEXT_MISMATCH"
 	CodeContextMismatch     = "CONTEXT_MISMATCH"
@@ -86,11 +87,21 @@ func (e Error) WithChange(idx int) Error {
 	return e
 }
 
+// Excluded 是一条被排除列表跳过的变更路径（只说明评审范围，不是诊断）。
+type Excluded struct {
+	Repo string `json:"repo,omitempty"`
+	File string `json:"file"`
+	Rule string `json:"rule,omitempty"`
+}
+
 // Result 是一次命令的结果。Errors 为空且（可选）Warnings 不阻塞成功。
 type Result struct {
 	OK       bool    `json:"ok"`
 	Errors   []Error `json:"errors"`
 	Warnings []Error `json:"warnings,omitempty"`
+	// ExcludeRules/Excluded 是覆盖检查实际生效的过滤信息（页面会展示，便于确认没有漏评/多评）。
+	ExcludeRules []string   `json:"exclude_rules,omitempty"`
+	Excluded     []Excluded `json:"excluded,omitempty"`
 }
 
 // NewResult 由错误列表构造结果；warning 级不参与 OK 判定。

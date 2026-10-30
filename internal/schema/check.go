@@ -125,8 +125,22 @@ func checkIntent(doc Document, c *Chain, in *Intent, ii int, seen map[string]boo
 	if len(in.Changes) == 0 {
 		add(wrap(report.Error{Code: report.CodeSchemaInvalid, Message: "意图 changes 至少需要一个"}))
 	}
+	seenChangeIDs := map[string]bool{}
 	for k := range in.Changes {
-		checkChangeShape(doc, in, &in.Changes[k], k, wrap, add)
+		ch := &in.Changes[k]
+		if id := strings.TrimSpace(ch.ID); id != "" {
+			if seenChangeIDs[id] {
+				e := wrap(report.Error{Code: report.CodeDuplicateChangeID, Message: fmt.Sprintf("change id %q 在意图内重复", id)})
+				e.ChangeIndex = report.Index(k)
+				e.File = ch.File
+				if ch.Repo != "" {
+					e.Repo = ch.Repo
+				}
+				add(e)
+			}
+			seenChangeIDs[id] = true
+		}
+		checkChangeShape(doc, in, ch, k, wrap, add)
 	}
 }
 
@@ -153,6 +167,11 @@ func checkChangeShape(doc Document, in *Intent, ch *Change, k int, wrap func(rep
 		add(w(report.Error{Code: report.CodeMissingExplanation, Message: "business_explanation 为空", Hint: "必须回答“为什么这里要改”，不能留空或写 null"}))
 	}
 	checkChangeRepo(doc, ch, w, add)
+	for ri, ref := range ch.References {
+		if strings.TrimSpace(ref) == "" {
+			add(w(report.Error{Code: report.CodeSchemaInvalid, Message: fmt.Sprintf("references[%d] 为空", ri), Hint: "引用写法：<intent-id>/<change-id> 或 <intent-id>#<display_group>"}))
+		}
+	}
 	if ch.DisplayOrder < 0 {
 		add(w(report.Error{Code: report.CodeSchemaInvalid, Message: "display_order 不能为负数", Hint: "数值小的先展示；不设置则排在已设置 display_order 的 change 之后"}))
 	}

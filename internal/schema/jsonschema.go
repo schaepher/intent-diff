@@ -103,6 +103,7 @@ const JSONSchema = `{
         {"required": ["binary"]}
       ],
       "properties": {
+        "id": {"type": "string", "description": "意图内稳定标识（修订时保持不变，供 diff/引用定位）"},
         "repo": {"type": "string", "description": "多仓文档必填：repos[] 中的仓库 id"},
         "file": {"type": "string", "minLength": 1, "description": "仓库相对路径"},
         "location": {"type": "string", "minLength": 1, "description": "人类可读的位置描述"},
@@ -129,7 +130,13 @@ const JSONSchema = `{
           "minimum": 0,
           "description": "页面展示顺序（小的先展示）；不影响 patch 重放顺序。未设置排在已设置之后"
         },
-        "display_group": {"type": "string", "description": "页面展示分组（如 页面入口/主流程/辅助函数/配置）"}
+        "display_group": {"type": "string", "description": "页面展示分组（如 页面入口/主流程/辅助函数/配置）"},
+        "display_group_note": {"type": "string", "description": "分组说明（同组取首个非空值）"},
+        "references": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "指向本链后续实现：<intent-id>/<change-id 或 1 基下标> 或 <intent-id>#<display_group>"
+        }
       }
     },
     "line": {

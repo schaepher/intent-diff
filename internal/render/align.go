@@ -14,6 +14,8 @@ type Cell struct {
 	Kind string
 	Sign string
 	HTML template.HTML
+	// Link 是该行在本地源码中的跳转链接（仅新状态一侧提供）。
+	Link template.URL
 }
 
 // Row 是一行对齐结果（设计文档 §8.5）。

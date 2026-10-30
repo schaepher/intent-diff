@@ -27,6 +27,19 @@
       <div class="foot-row"><span class="foot-label">{{.Name}} base</span><code>{{.BaseCommit}}</code></div>
       <div class="foot-row"><span class="foot-label">{{.Name}} head</span><code>{{.HeadRef}}</code></div>
       {{end}}
+      {{if .ExcludeRules}}
+      <details class="scope">
+        <summary class="scope-summary">评审范围：排除 {{len .ExcludeRules}} 条规则{{if .Excluded}}，跳过 {{len .Excluded}} 个文件{{end}}</summary>
+        <ul class="scope-rules" aria-label="排除规则">
+          {{range .ExcludeRules}}<li><code>{{.}}</code></li>{{end}}
+        </ul>
+        {{if .Excluded}}
+        <ul class="scope-files" aria-label="被排除的变更">
+          {{range .Excluded}}<li><span class="scope-file">{{if .Repo}}{{.Repo}}:{{end}}{{.File}}</span><span class="scope-rule">{{.Rule}}</span></li>{{end}}
+        </ul>
+        {{end}}
+      </details>
+      {{end}}
       <div class="foot-row foot-hint">← → 切换意图</div>
     </div>
   </aside>
@@ -79,11 +92,17 @@
           {{if $.LargeMode}}<details class="panel-details"><summary class="panel-details-summary">展开意图内容（{{len $in.Changes}} 个变更）</summary>{{end}}
           <div class="changes">
             {{range $k, $ch := $in.Changes}}
-            <section class="change" id="change-{{$ch.Anchor}}" data-change-index="{{$ch.Number}}">
+            {{if $ch.GroupStart}}
+            <div class="group-head"{{if $ch.GroupAnchor}} id="{{$ch.GroupAnchor}}"{{end}}>
+              <span class="group-name">{{$ch.GroupName}}</span>
+              {{if $ch.GroupNote}}<p class="group-note">{{$ch.GroupNote}}</p>{{end}}
+            </div>
+            {{end}}
+            <section class="change" id="change-{{$ch.Anchor}}" data-change-index="{{$ch.Number}}"{{if $ch.ChangeID}} data-change-id="{{$ch.ChangeID}}"{{end}}{{if $ch.DisplayGroup}} data-display-group="{{$ch.DisplayGroup}}"{{end}}>
               <div class="change-head">
                 <span class="change-index" title="change 序号（深链 #chain/intent/{{$ch.Number}}）">#{{$ch.Number}}</span>
                 {{if $ch.RepoLabel}}<span class="repo-tag">{{$ch.RepoLabel}}</span>{{end}}
-                <span class="change-file">{{if $ch.FileLink}}<a class="file-link" href="{{$ch.FileLink}}" title="在 VS Code 中打开真实源码">{{$ch.File}}</a>{{else}}{{$ch.File}}{{end}}</span>
+                <span class="change-file">{{if $ch.FileLink}}<a class="file-link{{if $ch.FileMissing}} is-missing{{end}}" href="{{$ch.FileLink}}" title="{{if $ch.FileMissing}}本地源码中未找到该文件（可能未 checkout 或已删除）；链接打开的是本地当前文件{{else}}在 VS Code 中打开本地当前文件（非历史快照）{{end}}">{{$ch.File}}</a>{{else}}{{$ch.File}}{{end}}</span>
                 {{if $ch.DisplayGroup}}<span class="group-tag">{{$ch.DisplayGroup}}</span>{{end}}
                 {{if $ch.IsNewFile}}<span class="tag tag-new">新增文件</span>{{end}}
                 {{if $ch.IsDeleted}}<span class="tag tag-del">删除文件</span>{{end}}
@@ -94,6 +113,11 @@
               <div class="explain{{if not $ch.HasExplanation}} explain-missing{{end}}">
                 <span class="explain-label">业务解释</span>
                 {{if $ch.HasExplanation}}<p>{{$ch.Explanation}}</p>{{else}}<p>缺少业务解释（business_explanation 不能为空）</p>{{end}}
+                {{if $ch.Refs}}
+                <div class="refs"><span class="refs-label">继续阅读</span>
+                  {{range $ch.Refs}}{{if .Href}}<a class="ref-link" href="{{.Href}}">{{.Label}}</a>{{else}}<span class="ref-missing" title="未找到引用目标">{{.Label}}</span>{{end}}{{end}}
+                </div>
+                {{end}}
               </div>
               {{if $ch.IsPatchOnly}}
               <div class="binary-note">此 change 仍是 patch-only（没有 lines），diff 为空；先运行 <code>intent-review fill</code>。</div>
@@ -114,7 +138,7 @@
                     <tr class="row{{if $row.Context}} row-ctx{{end}}">
                       <td class="ln">{{if $row.Left.No}}{{$row.Left.No}}{{end}}</td>
                       <td class="code{{if $row.Left.Kind}} code-{{$row.Left.Kind}}{{else}} code-blank{{end}}">{{if $row.Left.Sign}}<span class="sign">{{$row.Left.Sign}}</span>{{end}}{{$row.Left.HTML}}</td>
-                      <td class="ln">{{if $row.Right.No}}{{$row.Right.No}}{{end}}</td>
+                      <td class="ln">{{if $row.Right.Link}}<a class="ln-link" href="{{$row.Right.Link}}" title="在 VS Code 中定位第 {{$row.Right.No}} 行">{{$row.Right.No}}</a>{{else}}{{if $row.Right.No}}{{$row.Right.No}}{{end}}{{end}}</td>
                       <td class="code{{if $row.Right.Kind}} code-{{$row.Right.Kind}}{{else}} code-blank{{end}}">{{if $row.Right.Sign}}<span class="sign">{{$row.Right.Sign}}</span>{{end}}{{$row.Right.HTML}}</td>
                     </tr>
                     {{end}}

@@ -130,6 +130,8 @@ type Intent struct {
 
 // Change 是一个意图内某个文件的一处连续修改。
 type Change struct {
+	// ID 是意图内稳定的 change 标识（修订时保持不变，供 diff/深链/引用定位）。
+	ID string `json:"id,omitempty"`
 	// Repo 是多仓文档中 change 所属仓库 id；单仓文档必须为空。
 	Repo                string   `json:"repo,omitempty"`
 	File                string   `json:"file"`
@@ -147,6 +149,11 @@ type Change struct {
 	// 数值小的先展示（未设置=0 排在已设置之后）；同值按声明顺序。
 	DisplayOrder int    `json:"display_order,omitempty"`
 	DisplayGroup string `json:"display_group,omitempty"`
+	// DisplayGroupNote 是分组说明（同组取首个非空值），用于“调用链/独立函数”整体解释。
+	DisplayGroupNote string `json:"display_group_note,omitempty"`
+	// References 指向本链后续的 change 或分组，便于在调用处顺着读下去：
+	//   "<intent-id>/<change-id 或 1 基下标>"、"<intent-id>#<display_group>"。
+	References []string `json:"references,omitempty"`
 }
 
 // Line 是一条结构化对齐行。

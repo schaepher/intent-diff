@@ -96,3 +96,29 @@ func TestCompareCrossRepoLabels(t *testing.T) {
 		t.Fatalf("human = %s", rep.FormatHuman())
 	}
 }
+
+// 稳定 change id：位置/文件行变动但 id 不变时不算文件增删，只报内容/解释变化。
+func TestCompareUsesStableChangeIDs(t *testing.T) {
+	before := doc([]schema.Change{{ID: "ch-001", File: "a.go", Location: "旧位置", BusinessExplanation: "旧解释",
+		OldStart: 1, NewStart: 1, Lines: []schema.Line{{Type: schema.LineContext, Content: "x"}}}})
+	after := doc([]schema.Change{{ID: "ch-001", File: "a.go", Location: "新位置", BusinessExplanation: "新解释",
+		OldStart: 2, NewStart: 2, Lines: []schema.Line{{Type: schema.LineContext, Content: "y"}}}})
+	rep := Compare(before, after)
+	if len(rep.Intents) != 1 {
+		t.Fatalf("rep = %+v", rep)
+	}
+	ic := rep.Intents[0]
+	if len(ic.FilesAdded) != 0 || len(ic.FilesRemoved) != 0 {
+		t.Fatalf("稳定 id 不应误报文件增删: %+v", ic)
+	}
+	dims := strings.Join(ic.Dimensions, ",")
+	if !strings.Contains(dims, "explanation") || !strings.Contains(dims, "diff") {
+		t.Fatalf("dimensions = %s", dims)
+	}
+	if len(ic.ChangedChanges) != 1 || !strings.HasPrefix(ic.ChangedChanges[0], "ch-001(") {
+		t.Fatalf("changed_changes = %v", ic.ChangedChanges)
+	}
+	if !strings.Contains(rep.FormatHuman(), "变更项: ch-001") {
+		t.Fatalf("human = %s", rep.FormatHuman())
+	}
+}

@@ -106,8 +106,14 @@ func (l *List) Len() int {
 
 // Match 判断仓库相对路径是否被排除。
 func (l *List) Match(p string) bool {
+	_, ok := l.MatchReason(p)
+	return ok
+}
+
+// MatchReason 返回命中的排除模式（未命中时 ok=false），用于在页面上说明“为什么跳过”。
+func (l *List) MatchReason(p string) (rule string, ok bool) {
 	if l == nil || len(l.items) == 0 {
-		return false
+		return "", false
 	}
 	p = normalizePath(p)
 	base := p[strings.LastIndex(p, "/")+1:]
@@ -117,10 +123,10 @@ func (l *List) Match(p string) bool {
 			target = base
 		}
 		if it.re.MatchString(target) {
-			return true
+			return it.pattern, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func (l *List) has(pattern string) bool {

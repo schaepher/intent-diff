@@ -39,8 +39,10 @@ bash examples/demo/run.sh
 | `fill <file.json> --repo . [-o out.json]` | patch → `lines`/`old_start`/`new_start`，逐意图推进状态；幂等 |
 | `render <file.json> -o review.html [--repo .] [--max-lines N] [--no-highlight] [--config F] [--exclude G] [--unexclude G] [--source-root P]` | 生成自包含 HTML；输入仍是 patch 时自动在内存里 fill（需 `--repo`）；`--no-highlight` 关闭高亮 |
 | `schema [--output schema.json]` | 输出 JSON Schema（供 agent/编辑器补全） |
+| `build <file.json> --repo <项目根> [--out-dir .intent-review]` | **统一生成入口**：fill → validate → render，产物固定、页面可刷新，并给出评审范围与更新摘要 |
 | `watch <file.json> -o review.html [...]` | 文件变化自动重渲染，并说明本次更新影响了哪些意图 |
 | `diff <before.json> <after.json> [--json]` | 比较两版材料：意图增删/文件顺序/函数分组/解释内容 |
+| `clean [--out-dir .intent-review]` | 删除评审产物目录（只清理产物，不碰业务代码） |
 
 退出码：`0` 成功 / `1` 校验失败 / `2` 用法或 IO 错误 / `3` schema major 版本不支持。
 人类可读诊断写 **stderr**（行尾带错误码，如 `(CONTEXT_MISMATCH)`），`--json` 写 **stdout**。
@@ -77,17 +79,28 @@ flag 与位置参数可任意交错（`fill review.json --repo . -o out.json` �
 - 链级逐仓覆盖：`chain.base_commits: {"web": "…"}`；`chain.base_commit` 作为多仓共用缺省。
 - 单仓文档（没有 `repos`）行为不变：`--repo` 指向仓库本身，`change.repo` 必须省略。
 - 仓库 `path` 用**相对项目根**的路径（允许 `../other`），便于 JSON 跨机器共享；不要写绝对路径。
+- **不要**为跨仓评审创建合成 Git 仓或临时拼接仓库名：直接用 `repos[]` + `change.repo`，
+  来源、base/head 与校验结果都来自真实仓库。
 
 ## 展示顺序与分组（由表及里）
 
 patch 重放顺序 = `changes` 数组顺序（校验语义）；页面展示顺序可以不同：
 
 ```json
-{ "repo": "web", "file": "src/page.ts", "display_order": 10, "display_group": "页面入口" }
+{
+  "id": "ch-002",
+  "repo": "web", "file": "src/page.ts",
+  "display_order": 20, "display_group": "主流程",
+  "display_group_note": "Handler 是调用方；Helper 实现在后面的“辅助函数”分组展开。",
+  "references": ["intent-001/ch-005"]
+}
 ```
 
 - `display_order` 数值小的先展示；未设置的排在已设置之后（保持声明顺序）；同值按声明顺序。
-- `display_group` 渲染成标签，便于按“页面入口 → 主流程/调用方 → 辅助函数/策略 → 配置定义”阅读。
+- `display_group` 渲染成分组标题（同一分组的 change 连续展示），`display_group_note` 写整组说明
+  （同组取首个非空值）：有调用关系的函数一起解释，独立函数各自分组/单独解释。
+- `references` 生成“继续阅读”链接：`<intent-id>/<change-id 或 1 基下标>` 指向 change，
+  `<intent-id>#<display_group>` 指向分组；目标不存在时退化为纯文本（不编造跳转）。
 - 深链与校验错误里的 change 下标仍按**声明顺序**（1 基），与展示顺序无关。
 
 ## VS Code 跳转
@@ -99,6 +112,10 @@ patch 重放顺序 = `changes` 数组顺序（校验语义）；页面展示顺�
 - 覆盖方式：`repos[].source_root`，或 CLI `--source-root <path>`（单仓）、
   `--source-root <repo-id>=<path>`（多仓，可重复）。
 - 没有源码根信息时（如 `render` 不带 `--repo`）不生成链接，避免误跳。
+- 特殊字符（空格/`#`/`?`/中文）按 URL 规则转义；删除文件**不生成**链接（本地已不存在）；
+  本地缺文件保留链接但标记 `is-missing` 并提示“本地源码中未找到该文件”。
+- 行号定位：文件路径跳到该 change 的起始行（`new_start`）；右列每个行号可点，跳到精确行；
+  左列是 State(i-1) 的历史内容，**故意不加**链接，避免误认成本地当前文件。
 
 ## 文件过滤（排除列表）
 
@@ -132,6 +149,8 @@ CLI 再加临时项。生效顺序（同层删除优先）：
 intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_test.go'
 ```
 
+- `validate --json` 会带 `exclude_rules` 与 `excluded[]`（文件 + 命中的规则）；页面侧栏
+  “评审范围”面板展示同一份信息，更新后测试/文档/依赖文件不会再悄悄回到评审里。
 - `--exclude` / `--unexclude` 均可重复；`unexclude` 按模式**字面值**删除。
 - 过滤配置文件未知字段或非法 JSON 直接报用法错误（退出码 2），不静默忽略。
 - 模式语义：不含 `/` 时匹配**文件名**（任意深度，如 `*_test.go`）；含 `/` 时锚定仓库根；
@@ -149,7 +168,10 @@ intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_t
 - 大评审降级：总 diff 行数超过 `--max-lines`（默认 5000）时每个意图内容用 `<details>` 折叠
 - 移动端：左侧菜单变抽屉，状态机仍 sticky
 - 跨仓：文件路径带仓库标签，可点击用 `vscode://file/…` 打开真实源码
-- 展示分组：`display_group` 标签 + `display_order` 页面排序（不影响重放与深链）
+- 展示分组：`display_group` 分组标题 + 分组说明（`display_group_note`），`display_order` 控制阅读顺序（不影响重放与深链）
+- 评审范围面板：列出本次生效的排除规则与被跳过的文件，避免更新后测试/文档/依赖文件重新进入评审
+- “继续阅读”引用：`references` 从调用处跳到后面的实现 change 或分组
+- 源码定位：文件路径与右列行号均可点击，`vscode://file/…` 定位到本地当前文件（非历史快照）
 
 ## 数据模型（摘要）
 
@@ -182,7 +204,9 @@ intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_t
 
 - 多仓：顶层 `repos[]`（`id/title/path/base_commit/head_ref/source_root`）+ `change.repo`；
   链可跨仓串联，逐仓 base 覆盖用 `chain.base_commits`
-- 展示：`display_order`（页面顺序，不影响重放）、`display_group`（标签分组）
+- 稳定标识：`change.id`（修订时保持不变，供 diff/引用定位；意图内唯一）
+- 展示：`display_order`（页面顺序，不影响重放）、`display_group` + `display_group_note`（分组与说明）、
+  `references`（指向后续实现：`<intent-id>/<change-id>` 或 `<intent-id>#<display_group>`）
 - 统一过滤：顶层 `file_filter.exclude` / `file_filter.unexclude`
 - 行类型：`context`（两侧显示、双列行号 +1）、`del`（仅左）、`add`（仅右）
 - `patch` 是 unified diff 的**行数组**（避免 JSON 转义地狱）；fill 后删除该字段
@@ -205,20 +229,25 @@ agent **只输出 JSON**，不写 HTML；渲染与样式由工具负责。
 
 ## 更新与反馈
 
-每轮调整后重新 `fill → validate → render`，并**复用同一个输出路径**，浏览器刷新即可看到最新页面：
+统一入口（一次完成 fill → validate → render，产物路径固定，浏览器刷新即可）：
 
 ```bash
-intent-review fill  review.json --repo . -o .intent-review/review.filled.json
-intent-review validate .intent-review/review.filled.json --repo . --json
-intent-review render   .intent-review/review.filled.json -o .intent-review/review.html --repo .
+intent-review build review.json --repo .            # → .intent-review/review.filled.json + review.html
 ```
 
-- `watch` 每次重渲染后打印“本次更新影响 N 个意图”，并列出维度（文件顺序 / 函数分组 / 解释内容 / 代码内容）。
-- 需要比较两版材料（例如修订前后）：`intent-review diff before.json after.json [--json]`。
+- 输出示例：`build: 评审范围：排除 8 条规则，跳过 4 个文件` /
+  `build: 本次更新影响 1 个意图 … 变更项: ch-002(解释内容)` / `build: ok → .intent-review/review.html`。
+- 校验失败也会更新页面（诊断上浮到状态机节点），退出码保持 `1`；填充失败则保留上一版产物。
+- `watch` 每次变化自动重跑并打印同样的影响摘要；要对比任意两版材料用
+  `intent-review diff before.json after.json [--json]`。
+- 需要单独跑其中一步时，`fill` / `validate` / `render` 仍然可用。
 
 ## 评审产物不入库
 
-- 评审材料放 `.intent-review/`（JSON / HTML / 历史版本），该目录已被 `.gitignore` 忽略。
+- `build` 默认写到 `.intent-review/`（`review.filled.json` / `review.html`），该目录已被 `.gitignore` 忽略；
+  历史版本也放这里（如 `.intent-review/history/`）。
+- `intent-review clean`（或 `clean --out-dir X`）删除产物目录；只接受默认产物目录名或含
+  `review.filled.json`/`review.html` 的目录，防止误删业务目录。
 - 业务代码照常 commit / push / 部署；评审产物**不默认**纳入提交。
 - 需要分享时单独传自包含 HTML，或把材料放到独立仓库；不要把产物加进业务仓库。
 
@@ -258,7 +287,17 @@ intent-review render   .intent-review/review.filled.json -o .intent-review/revie
     不生成链接。`--source-root` 覆盖优先级最高，其次 `repos[].source_root`。
 14. **更新反馈只读**：`diff` / `watch` 的变更说明只比较文档（title/summary/files/order/group/explanation/diff），
     不触发重放、不改变退出码。
-15. **评审产物与业务提交分离**：产物默认放 `.intent-review/`（gitignore）；工具不会把 HTML/JSON 写入仓库跟踪路径。
+15. **评审产物与业务提交分离**：`build` 默认写 `.intent-review/`（gitignore），`clean` 只删产物目录
+    （白名单：目录名为 `.intent-review` 或含 `review.filled.json`/`review.html`）。
+16. **`build` 是唯一生成入口**：内部依次 `fill → validate → render`，产物固定为
+    `<out-dir>/review.filled.json` 与 `<out-dir>/review.html`；校验失败仍更新页面（退出码 1），
+    填充失败不覆盖上一版产物。
+17. **稳定 change 标识**：`change.id` 可选但**修订时必须保持不变**（意图内唯一，重复报
+    `DUPLICATE_CHANGE_ID`）；`revdiff`/`diff` 优先按 id 匹配，否则退回 `(repo,file,location)`。
+    页面 `data-change-id` 暴露该标识，`references` 可用它跳转。
+18. **页面评审范围**：`validate` 回传 `exclude_rules` 与 `excluded`（含命中规则），`render`/`build`
+    在侧栏展示；删除文件不生成源码链接，本地缺文件保留链接但标记 `is-missing` 与说明；
+    右列行号带精确行跳转，左列（历史状态）不加链接。
 
 ## 目录结构
 

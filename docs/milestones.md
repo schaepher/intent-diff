@@ -124,6 +124,43 @@ $ intent-review diff filled.json revision.json
 意图 [chain-checkout] intent-001 修改（…）: 文件顺序、函数分组、解释内容
 ```
 
+## M8 统一 build 入口、评审范围面板、稳定标识、分组/引用
+
+| 验收项 | 证据 |
+|---|---|
+| `build` = fill→validate→render，产物固定、校验失败仍更新页面 | `TestCLIBuildArtifactsScopeAndSummary`、`TestCLIBuildWritesPageOnValidationFailure`、`TestCLIBuildRequiresRepo` |
+| 页面展示评审范围（规则 + 跳过文件 + 命中规则） | `TestBuildShowsReviewScope`、`TestBuildHidesScopeWhenNoRules`、`TestRunReportsExcludedPathsAndRules`、`TestMatchReasonReturnsHitPattern` |
+| 项目级过滤固化（文档 file_filter 由 build 每次读取） | `TestCLIBuildArtifactsScopeAndSummary`（新增测试文件后仍被排除） |
+| 稳定 change id + revdiff 优先按 id 匹配 | `TestCheckStructureChangeIDAndReferences`、`TestCompareUsesStableChangeIDs` |
+| 分组标题/分组说明/按调用链解释 | `TestBuildGroupHeadersAndNotes`、`TestBuildOrdersChangesByDisplayOrder` |
+| 调用处引用后续实现（change / 分组 / 缺失引用） | `TestBuildResolvesReferences` |
+| 源码跳转边界（删除文件、文件不存在、精确行号） | `TestBuildSourceLinksEdgeCases`、`TestFileLinkEscapesAndSkipsEmptyRoot` |
+| 更新摘要区分维度并带 change id | `TestCompareUsesStableChangeIDs`、`TestCLIBuildArtifactsScopeAndSummary`、`TestCLIDiffReportsIntentChanges` |
+| `clean` 只删产物目录（白名单防误删） | `TestCLIBuildArtifactsScopeAndSummary`（`--out-dir <项目根>` 被拒绝） |
+
+### 复现记录（build 实测，2026-11-02）
+
+```text
+$ intent-review build review2.json --repo "$P" --out-dir .intent-review
+build: 评审范围：排除 8 条规则，跳过 4 个文件
+build: 首次生成，共 1 个意图
+build: ok → .intent-review/review.html（1 条链，1 个意图，6 行 diff）
+build: 产物已写入 .intent-review（该目录已 gitignore，勿提交）
+
+$ intent-review build review2.json --repo "$P" --out-dir .intent-review   # 只改 ch-002 的解释
+build: 本次更新影响 1 个意图
+意图 [chain-checkout] intent-001 修改（…）: 解释内容
+  变更项: ch-002(解释内容)
+
+$ grep -o 'scope-file">[^<]*' .intent-review/review.html
+web:go.mod / web:page.test.tsx / api:api.pb.go / api:handler_test.go
+$ grep -o 'ref-link" href="[^"]*">[^<]*' .intent-review/review.html
+ref-link" href="#change-c0-i0-ch2">api:handler.go @ Helper 返回值
+
+$ intent-review clean --out-dir .intent-review
+clean: 已删除 .intent-review（评审产物不会进入业务提交）
+```
+
 ## 复现记录（2026-10-29，本机）
 
 ```text

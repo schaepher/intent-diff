@@ -87,20 +87,27 @@ func Run(doc schema.Document, repoDir string, opts Options) (report.Result, erro
 			errs = append(errs, compareHead(repo, heads[id], id, chain, es.Engine(id))...)
 		}
 	}
+	files := opts.Files
+	if files == nil {
+		files = filefilter.Default()
+	}
+	res := report.NewResult(errs)
+	res.ExcludeRules = files.Patterns()
 	// 重放全部成功时，再检查 base→head 的变更是否都被某条链覆盖：
 	// 漏掉整个文件、未声明的重命名都会在这里暴露（设计文档 §7.2「遗漏变更」）。
+	// 被排除列表跳过的路径记录到 Excluded，供页面说明“本次评审范围”。
 	if !stopped {
-		files := opts.Files
-		if files == nil {
-			files = filefilter.Default()
-		}
-		coverageErrs, err := checkCoverage(project, covBases, heads, touched, files)
+		coverageErrs, excluded, err := checkCoverage(project, covBases, heads, touched, files)
 		if err != nil {
 			return report.Result{}, err
 		}
-		errs = append(errs, coverageErrs...)
+		res.Errors = append(res.Errors, coverageErrs...)
+		if len(coverageErrs) > 0 {
+			res.OK = false
+		}
+		res.Excluded = excluded
 	}
-	return report.NewResult(errs), nil
+	return res, nil
 }
 
 func repoLabel(id string) string {
@@ -137,20 +144,25 @@ func unfilledChanges(doc schema.Document) []report.Error {
 
 // checkCoverage 要求每个仓库 base→head 的变更路径都被至少一条链触及；
 // 命中排除列表的路径（如 *_test.go）跳过（README 实现约定 §10）。
-func checkCoverage(project *replay.Project, bases, heads map[string]string, touched map[string]map[string]bool, files *filefilter.List) ([]report.Error, error) {
+func checkCoverage(project *replay.Project, bases, heads map[string]string, touched map[string]map[string]bool, files *filefilter.List) ([]report.Error, []report.Excluded, error) {
 	var errs []report.Error
+	var excluded []report.Excluded
 	for _, id := range project.IDs() {
 		repo, err := project.Repo(id)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		paths, err := repo.ChangedPaths(bases[id], heads[id])
 		if err != nil {
-			return nil, fmt.Errorf("读取仓库 %s 的 base..head 变更列表失败: %w", repoLabel(id), err)
+			return nil, nil, fmt.Errorf("读取仓库 %s 的 base..head 变更列表失败: %w", repoLabel(id), err)
 		}
 		sort.Strings(paths)
 		for _, p := range paths {
-			if touched[id][p] || files.Match(p) {
+			if touched[id][p] {
+				continue
+			}
+			if rule, skip := files.MatchReason(p); skip {
+				excluded = append(excluded, report.Excluded{Repo: id, File: p, Rule: rule})
 				continue
 			}
 			errs = append(errs, report.Error{
@@ -160,7 +172,7 @@ func checkCoverage(project *replay.Project, bases, heads map[string]string, touc
 			})
 		}
 	}
-	return errs, nil
+	return errs, excluded, nil
 }
 
 func replayChain(es *replay.Engines, chain *schema.Chain) ([]report.Error, bool) {

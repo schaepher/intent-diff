@@ -38,6 +38,9 @@ type Options struct {
 	// SourceRoots 是 VS Code 跳转用的真实源码根，key 为仓库 id（单仓为 ""）。
 	// 为空表示不生成链接（避免指向重放快照）。
 	SourceRoots map[string]string
+	// ExcludeRules/Excluded 是本次覆盖检查生效的过滤信息，页面展示评审范围。
+	ExcludeRules []string
+	Excluded     []report.Excluded
 }
 
 // Result 是渲染产物与附带诊断。
@@ -70,11 +73,13 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 	large := totalLines > opt.MaxLines
 
 	page := pageData{
-		Title:      doc.Meta.Title,
-		LargeMode:  large,
-		TotalLines: totalLines,
-		CSS:        template.CSS(styleText),
-		JS:         template.JS(scriptText),
+		Title:        doc.Meta.Title,
+		LargeMode:    large,
+		TotalLines:   totalLines,
+		ExcludeRules: opt.ExcludeRules,
+		Excluded:     scopeViews(opt.Excluded),
+		CSS:          template.CSS(styleText),
+		JS:           template.JS(scriptText),
 	}
 	for _, id := range doc.RepoIDs() {
 		rv := repoView{ID: id, BaseCommit: doc.RepoBase(id), HeadRef: doc.RepoHead(id)}
@@ -89,33 +94,29 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 	}
 	for ci := range doc.Chains {
 		c := &doc.Chains[ci]
+		refs := newChainRefs(c, ci)
 		cv := chainView{ID: c.ID, Title: c.Title}
 		for ii := range c.Intents {
 			in := &c.Intents[ii]
+			plan := planGroups(in.Changes)
 			iv := intentView{
 				ID: in.ID, Title: in.Title, Summary: in.Summary,
 				Rationale: in.BusinessRationale, Risk: in.RiskNotes,
 				Number: ii + 1, Total: len(c.Intents),
 			}
+			prevGroup := "\x00initial"
 			for _, k := range displayOrder(in.Changes) {
 				ch := &in.Changes[k]
-				anchor := fmt.Sprintf("c%d-i%d-ch%d", ci, ii, k+1)
-				cv2 := changeView{
-					Anchor: anchor, Number: k + 1, File: ch.File, Location: ch.Location,
-					Repo: ch.Repo, RepoLabel: repoLabel(doc, ch.Repo), DisplayGroup: ch.DisplayGroup,
-					StatePrev: ii, StateCur: ii + 1,
-					FileLink:    fileLink(opt.SourceRoots[ch.Repo], ch.File, changeLine(ch.OldStart, ch.NewStart)),
-					Explanation: ch.BusinessExplanation, HasExplanation: strings.TrimSpace(ch.BusinessExplanation) != "",
-					RenamedFrom: ch.RenamedFrom, IsNewFile: ch.NewFile,
-					IsDeleted: ch.Deleted, IsBinary: ch.Binary, IsPatchOnly: len(ch.Patch) > 0 && len(ch.Lines) == 0,
-				}
+				cv2 := buildChange(doc, *ch, k, ci, ii, plan, prevGroup, opt.SourceRoots, refs)
+				prevGroup = strings.TrimSpace(ch.DisplayGroup)
 				if !ch.Binary {
 					rows, ok := alignRows(*ch, hl)
+					withLineLinks(rows, opt.SourceRoots[ch.Repo], ch.File)
 					iv.Changes = append(iv.Changes, withRows(cv2, rows))
 					if !ok && hl != nil {
 						warns.add(report.Error{
 							Code: report.CodeHighlightFallback, Severity: report.SeverityWarning,
-							ChainID: c.ID, IntentID: in.ID, File: ch.File,
+							ChainID: c.ID, IntentID: in.ID, Repo: ch.Repo, File: ch.File,
 							Message: "没有匹配的语法高亮 lexer，已降级为纯文本",
 						})
 					}
@@ -148,142 +149,46 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 	return res, nil
 }
 
+// buildChange 组装单个 change 的视图（展示顺序、分组、链接、引用）。
+func buildChange(doc schema.Document, ch schema.Change, k, ci, ii int, plan groupPlan, prevGroup string, roots map[string]string, refs *chainRefs) changeView {
+	group := strings.TrimSpace(ch.DisplayGroup)
+	root := roots[ch.Repo]
+	var link template.URL
+	missing := false
+	if !ch.Deleted {
+		// 删除文件在本地已不存在，不生成可能误导的源码链接。
+		link = fileLink(root, ch.File, changeLine(ch.OldStart, ch.NewStart))
+		missing = link != "" && sourceFileMissing(root, ch.File)
+	}
+	return changeView{
+		Anchor:         fmt.Sprintf("c%d-i%d-ch%d", ci, ii, k+1),
+		Number:         k + 1,
+		ChangeID:       ch.ID,
+		Repo:           ch.Repo,
+		RepoLabel:      repoLabel(doc, ch.Repo),
+		DisplayGroup:   group,
+		GroupStart:     group != "" && group != prevGroup,
+		GroupName:      group,
+		GroupNote:      plan.notes[group],
+		GroupAnchor:    groupAnchor(ci, ii, plan, group),
+		FileLink:       link,
+		FileMissing:    missing,
+		Refs:           refs.resolve(ch.References),
+		StatePrev:      ii,
+		StateCur:       ii + 1,
+		File:           ch.File,
+		Location:       ch.Location,
+		Explanation:    ch.BusinessExplanation,
+		HasExplanation: strings.TrimSpace(ch.BusinessExplanation) != "",
+		RenamedFrom:    ch.RenamedFrom,
+		IsNewFile:      ch.NewFile,
+		IsDeleted:      ch.Deleted,
+		IsBinary:       ch.Binary,
+		IsPatchOnly:    len(ch.Patch) > 0 && len(ch.Lines) == 0,
+	}
+}
+
 func withRows(c changeView, rows []Row) changeView {
 	c.Rows = rows
 	return c
-}
-
-// ---- 模板数据结构 ----
-
-type pageData struct {
-	Title      string
-	LargeMode  bool
-	TotalLines int
-	Repos      []repoView
-	Chains     []chainView
-	CSS        template.CSS
-	JS         template.JS
-}
-
-// repoView 是侧栏底部展示的仓库信息。
-type repoView struct {
-	ID         string
-	Name       string
-	BaseCommit string
-	HeadRef    string
-}
-
-type chainView struct {
-	ID      string
-	Title   string
-	Intents []intentView
-}
-
-type intentView struct {
-	ID         string
-	Title      string
-	Summary    string
-	Rationale  string
-	Risk       string
-	Number     int
-	Total      int
-	HasWarning bool
-	WarnTitle  string
-	Warnings   []warningView
-	Changes    []changeView
-}
-
-type warningView struct {
-	Code     string
-	Severity string
-	Message  string
-	Repo     string
-	File     string
-	Line     int
-	IsError  bool
-}
-
-type changeView struct {
-	Anchor         string
-	Number         int
-	Repo           string
-	RepoLabel      string
-	DisplayGroup   string
-	FileLink       template.URL
-	StatePrev      int
-	StateCur       int
-	File           string
-	Location       string
-	Explanation    string
-	HasExplanation bool
-	RenamedFrom    string
-	IsNewFile      bool
-	IsDeleted      bool
-	IsBinary       bool
-	IsPatchOnly    bool
-	Rows           []Row
-}
-
-// ---- 诊断索引 ----
-
-type warningIndex struct {
-	all   []report.Error
-	byKey map[string][]report.Error
-	chain map[string][]report.Error
-}
-
-func newWarningIndex(in []report.Error) *warningIndex {
-	idx := &warningIndex{byKey: map[string][]report.Error{}, chain: map[string][]report.Error{}}
-	for _, e := range in {
-		idx.add(e)
-	}
-	return idx
-}
-
-func (w *warningIndex) add(e report.Error) {
-	w.all = append(w.all, e)
-	dst := w.byKey[e.ChainID+"\x00"+e.IntentID]
-	w.byKey[e.ChainID+"\x00"+e.IntentID] = append(dst, e)
-	if e.IntentID == "" {
-		dst := w.chain[e.ChainID]
-		w.chain[e.ChainID] = append(dst, e)
-	}
-}
-
-func (w *warningIndex) decorate(iv *intentView, chainID, intentID string) {
-	all := append([]report.Error{}, w.byKey[chainID+"\x00"+intentID]...)
-	all = append(all, w.chain[chainID]...)
-	for _, e := range all {
-		iv.Warnings = append(iv.Warnings, warningView{
-			Code: e.Code, Severity: e.Severity, Message: firstNonEmpty(e.Message, e.Hint),
-			Repo: e.Repo, File: e.File, Line: e.Line, IsError: !e.Warning(),
-		})
-	}
-	if len(iv.Warnings) > 0 {
-		iv.HasWarning = true
-		parts := make([]string, 0, len(iv.Warnings))
-		for _, wv := range iv.Warnings {
-			parts = append(parts, wv.Code+": "+wv.Message)
-		}
-		iv.WarnTitle = strings.Join(parts, " | ")
-	}
-}
-
-func (w *warningIndex) flatten() []report.Error { return w.all }
-
-// repoLabel 返回页面上显示的仓库前缀（单仓为空）。
-func repoLabel(doc schema.Document, repoID string) string {
-	if !doc.MultiRepo() {
-		return ""
-	}
-	return repoID
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
 }

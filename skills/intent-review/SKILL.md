@@ -25,14 +25,21 @@ description: 把一次代码变更拆成有序意图链，产出 intent-review J
    **不要**在链尾追加“修正意图”让前面继续展示过期代码。需要留档的历史方案放
    `.intent-review/history/` 或 git 历史里。
 8. **新增函数按调用关系拆分解释**：不要把一个新增文件当成默认解释单位。有调用关系的函数
-   串成一条“调用链”解释；独立函数各自一个 change（同一意图内可用多个 change 顺序追加）。
-9. **调用处交代新函数职责**：上层引用新函数时，`business_explanation` 要说明“它是做什么的”，
-   并提示实现在后面展开（如“实现在本意图第 3 个 change / 下一个意图”），让评审者能顺着读下去。
+   串成一条“调用链”解释（同 `display_group` + `display_group_note`）；独立函数各自一个 change
+   （同一意图内可用多个 change 顺序追加，各自 `display_group`）。
+9. **调用处交代新函数职责并链接实现**：上层引用新函数时，`business_explanation` 说明“它解决什么问题”，
+   并用 `references` 指向后面的实现（`"<intent-id>/<change-id>"` 或 `"<intent-id>#<display_group>"`），
+   让评审者顺着主流程读、需要时再跳转深入。
 10. **展示顺序由表及里**：用 `display_order` 把“页面入口 / 主流程 / 调用方”排在前面，
    再排“辅助函数 / 策略 / 配置定义”；`display_group` 写分组名。**不要**为了展示顺序调整
    `changes` 数组顺序——数组顺序就是重放顺序，会让行号语义变复杂。
 11. **跨仓按需声明**：同一需求涉及多个仓库时，顶层写 `repos[]`（id/path/base_commit/head_ref），
    每个 change 写 `repo`；同一意图可以跨仓。单仓文档不要写 `repos`/`repo`。
+12. **change 用稳定 id**：每个 change 写 `id`（如 `ch-001`），**修订时保持同一个 id**；
+   id 在同一意图内唯一。这样 `diff`/`build` 能准确说明“哪个 change 的解释/分组/代码变了”，
+   而不是靠位置猜测。
+13. **分组说明写整体逻辑**：同一 `display_group` 的首个 change 写 `display_group_note`，
+   说明这组函数/文件在调用链里的位置；单个函数可以再在自己的 `business_explanation` 里讲细节。
 
 ## 流程
 
@@ -90,11 +97,17 @@ git diff <base> <head>            # 只看，不要直接按 hunk 分配给意�
     "intents": [{
       "id": "intent-001", "title": "…", "summary": "…",
       "changes": [
-        { "repo": "web", "file": "src/page.ts", "location": "页面入口", "business_explanation": "…",
-          "display_order": 10, "display_group": "页面入口", "patch": ["…"] },
-        { "repo": "api", "file": "handler.go", "location": "Handler 调用方", "business_explanation": "…",
+        { "id": "ch-001", "repo": "web", "file": "src/page.ts", "location": "页面入口",
+          "business_explanation": "入口先读；Helper 的实现在 intent-002#辅助函数 展开。",
+          "references": ["intent-002#辅助函数"],
+          "display_order": 10, "display_group": "页面入口",
+          "display_group_note": "从页面入口往下读，先入口、再主流程。", "patch": ["…"] },
+        { "id": "ch-002", "repo": "api", "file": "handler.go", "location": "Handler 调用方",
+          "business_explanation": "Handler 调用 Helper；Helper 负责…，实现在 ch-003。",
+          "references": ["intent-001/ch-003"],
           "display_order": 20, "display_group": "主流程", "patch": ["…"] },
-        { "repo": "api", "file": "handler.go", "location": "Helper 实现", "business_explanation": "…",
+        { "id": "ch-003", "repo": "api", "file": "handler.go", "location": "Helper 实现",
+          "business_explanation": "Helper 的实际实现。",
           "display_order": 30, "display_group": "辅助函数", "patch": ["…"] }
       ]
     }]
@@ -167,7 +180,7 @@ intent-review validate review.filled.json --repo . --json
 | `SCHEMA_INVALID` | 结构/类型/必填项错误（含 patch-only 输入） | 补字段；先 `fill` 再 validate |
 | `SCHEMA_VERSION_UNSUPPORTED` | major 版本不匹配 | 用 `1.x` |
 | `MISSING_BUSINESS_EXPLANATION` | 业务解释为空 | 写“为什么” |
-| `DUPLICATE_INTENT_ID` / `DUPLICATE_CHAIN_ID` / `DUPLICATE_REPO_ID` | id 重复 | 链内/全局/仓库唯一 |
+| `DUPLICATE_INTENT_ID` / `DUPLICATE_CHAIN_ID` / `DUPLICATE_REPO_ID` / `DUPLICATE_CHANGE_ID` | id 重复 | 链内/全局/仓库/意图内唯一 |
 | `REPO_UNAVAILABLE` | 仓库目录/提交不可用，或 change.repo 未声明 | 检查 `repos[]` 的 path/base/head 与 `--repo` 项目根 |
 | `PATCH_PARSE_ERROR` | hunk 头/hunk 数量/行数不符 | 一个 change 一个 hunk；行首保留空格 |
 | `PATCH_CONTEXT_MISMATCH` | fill 应用 patch 时上下文不匹配 | 用上一状态重新生成该 hunk |
@@ -189,10 +202,11 @@ intent-review render review.filled.json -o review.html --repo .
 
 - 你只输出 JSON；**不要手写 HTML/CSS/JS**。
 - 渲染失败按 stderr 提示修 JSON；校验失败仍会生成页面（诊断已标到节点），但交付前应修到 ok。
-- **每轮调整都重跑 fill → validate → render**，输出路径保持不变（浏览器刷新即可）；
-  用 `intent-review diff <旧材料> <新材料>` 或 `watch` 自动反馈说明“哪些意图变了、变在
-  文件顺序 / 函数分组 / 解释内容 / 代码内容”，不要只说“已更新”。
-- 评审产物放 `.intent-review/`（已 gitignore），业务代码照常 commit/push/部署，**不要提交评审产物**。
+- **每轮调整都重跑 `build`（= fill → validate → render）**，输出路径不变（浏览器刷新即可）；
+  `build`/`watch` 会打印“本次更新影响哪些意图，变在文件顺序 / 函数分组 / 解释内容 / 代码内容”，
+  不要只说“已更新”。需要对比任意两版材料用 `intent-review diff`。
+- 评审产物放 `.intent-review/`（已 gitignore）；收尾可以用 `intent-review clean` 清理。
+  业务代码照常 commit/push/部署，**不要提交评审产物**。
 - 需要 VS Code 跳转时给 `--source-root`（单仓 `<path>`，多仓 `<repo-id>=<path>`），
   不指定时默认仓库 checkout，不会跳到重放快照。
 
@@ -208,7 +222,10 @@ intent-review render review.filled.json -o review.html --repo .
 - 方案调整后在链尾追加“修正意图”——直接改原意图并重新 fill，前面不要留过期代码。
 - 把一个新增文件整体当成一个 change——按调用关系拆成多个 change，各自解释。
 - 为了页面顺序调整 `changes` 数组顺序——用 `display_order`，数组顺序是重放语义。
+- 修订时改 change 的 `id`（或干脆不写 id）——保持稳定 id，否则更新摘要会误报文件增删。
+- 新增函数只写“这里实现了 X”，不写它在调用链里的位置/职责——补齐职责说明 + `references`。
 - 多仓时把仓库拼进 `file`（如 `web:src/a.ts`）——用 `repo` + `file`。
+- 为跨仓评审创建合成/临时 Git 仓，或把多个仓的路径硬拼成一个——用 `repos[]` 指真实 checkout。
 
 ## 输出
 
