@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// 浏览器自检：验证渲染页的切换/深链/sticky/移动端/高亮/离线性。
+// 浏览器自检：验证渲染页的切换/深链/sticky/移动端/高亮/离线性与 VS Code 链接。
 // 依赖 playwright（npm i playwright；浏览器需已安装）。
 // 用法: node scripts/ui-check.mjs [review.html]
+//      PLAYWRIGHT_CHANNEL=chrome|msedge 复用本机已安装浏览器（不设置则用 Playwright 自带版本）。
 
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -30,7 +31,15 @@ function check(name, cond, detail) {
   if (!cond) failures.push(`${name}${detail ? ': ' + detail : ''}`);
 }
 
-const browser = await chromium.launch();
+const channel = process.env.PLAYWRIGHT_CHANNEL || '';
+let browser;
+try {
+  browser = await chromium.launch(channel ? { channel } : {});
+} catch (e) {
+  console.error(`启动浏览器失败${channel ? `（PLAYWRIGHT_CHANNEL=${channel}）` : ''}: ${e.message}`);
+  console.error('可设置 PLAYWRIGHT_CHANNEL=chrome 或 msedge 复用本机浏览器；不设置则使用 Playwright 自带浏览器。');
+  process.exit(2);
+}
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const net = [];
 const pageErrors = [];
@@ -175,6 +184,60 @@ if (fs.existsSync(bin)) {
   check('大评审显示徽标', large.badge, JSON.stringify(large));
   check('大评审内容折叠 details', large.details >= 1, String(large.details));
   check('当前意图 details 展开', large.open === true, String(large.open));
+
+  // 源码链接：--source-root 生成 vscode://file/；特殊字符编码；点击不启动编辑器。
+  const srcDir = path.join(dir, 'src');
+  const specialRel = '源码/页面 说明#1?.go';
+  fs.mkdirSync(path.join(srcDir, '源码'), { recursive: true });
+  fs.writeFileSync(path.join(srcDir, '源码', '页面 说明#1?.go'), 'package main\nvar X = 1\n');
+  const linkDoc = {
+    schema_version: '1.0',
+    meta: { title: '链接自检', base_commit: 'deadbeef', head_ref: 'main' },
+    chains: [{
+      id: 'c1', title: '链一',
+      intents: [{
+        id: 'i1', title: '新增页面', summary: '链接',
+        changes: [{
+          file: specialRel, location: '开头', business_explanation: '链接自检',
+          new_file: true, old_start: 0, new_start: 1,
+          lines: [{ type: 'add', content: 'package main' }, { type: 'add', content: 'var X = 1' }],
+        }],
+      }],
+    }],
+  };
+  const linkJson = path.join(dir, 'link.json');
+  const linkHtml = path.join(dir, 'link.html');
+  fs.writeFileSync(linkJson, JSON.stringify(linkDoc));
+  execFileSync(bin, ['render', linkJson, '-o', linkHtml, '--source-root', srcDir]);
+
+  await page.goto(pathToFileURL(linkHtml).href);
+  await page.waitForTimeout(200);
+  const linkInfo = await page.evaluate(() => {
+    const a = document.querySelector('.change-file .file-link');
+    if (!a) return null;
+    a.addEventListener('click', (e) => { e.preventDefault(); window.__vscodeTarget = a.getAttribute('href'); });
+    return {
+      href: a.getAttribute('href') || '',
+      text: (a.textContent || '').trim(),
+      missing: a.classList.contains('is-missing'),
+      visible: a.offsetParent !== null,
+    };
+  });
+  check('文件链接存在且可见', !!linkInfo && linkInfo.visible, JSON.stringify(linkInfo));
+  check('文件链接使用 vscode://file/', !!linkInfo && linkInfo.href.startsWith('vscode://file/'), linkInfo && linkInfo.href);
+  check('中文/空格/#/? 已 URI 编码',
+    !!linkInfo && linkInfo.href.includes('%E6%BA%90%E7%A0%81') && linkInfo.href.includes('%20') &&
+      linkInfo.href.includes('%23') && linkInfo.href.includes('%3F'), linkInfo && linkInfo.href);
+  check('链接文本保持原文件名', !!linkInfo && linkInfo.text === specialRel, linkInfo && linkInfo.text);
+  check('本地存在的源码不标记 is-missing', !!linkInfo && !linkInfo.missing, JSON.stringify(linkInfo));
+  const beforeClick = page.url();
+  await page.click('.change-file .file-link');
+  await page.waitForTimeout(150);
+  const captured = await page.evaluate(() => window.__vscodeTarget || '');
+  check('点击捕获 vscode:// 目标地址', !!linkInfo && captured === linkInfo.href, captured);
+  check('点击不跳转页面（不启动编辑器）', page.url() === beforeClick, page.url());
+  const lineHref = await page.evaluate(() => document.querySelector('.ln-link')?.getAttribute('href') || '');
+  check('行号链接定位同一源码根', lineHref.startsWith('vscode://file/') && lineHref.includes('%E6%BA%90%E7%A0%81'), lineHref);
 }
 
 check('无页面 JS 错误', pageErrors.length === 0, pageErrors.join(' | '));

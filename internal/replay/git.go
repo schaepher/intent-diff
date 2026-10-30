@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+
+	"intent-review/internal/schema"
 )
 
 // Repo 是一个本地 git 仓库（工作区）。内容一律从提交读取，不受工作区脏文件影响。
@@ -84,8 +86,7 @@ func checkRelPath(p string) error {
 	if strings.HasPrefix(p, "/") || path.IsAbs(p) {
 		return fmt.Errorf("文件路径 %q 必须是仓库相对路径", p)
 	}
-	clean := path.Clean(p)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+	if _, ok := schema.CleanRelPath(p); !ok {
 		return fmt.Errorf("文件路径 %q 越出仓库根", p)
 	}
 	return nil

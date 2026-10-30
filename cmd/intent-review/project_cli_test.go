@@ -155,3 +155,57 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(raw)
 }
+
+// --source-root 必须覆盖 --repo（避免点开临时重放快照），且 flag 在文件名前后都可解析。
+func TestCLIRenderSourceRootOverridesRepoAnyOrder(t *testing.T) {
+	_, repoDir := fixtureRepo(t)
+	docPath := writeDoc(t, canonicalDoc())
+	real := t.TempDir()
+	outA := filepath.Join(t.TempDir(), "a.html")
+	outB := filepath.Join(t.TempDir(), "b.html")
+	order := []struct {
+		args []string
+		out  string
+	}{
+		{[]string{"render", docPath, "-o", outA, "--repo", repoDir, "--source-root", real}, outA},
+		{[]string{"render", "--source-root", real, "--repo", repoDir, docPath, "-o", outB}, outB},
+	}
+	for i, c := range order {
+		code, _, errOut := runCLI(t, c.args...)
+		if code != 0 {
+			t.Fatalf("case %d: code=%d err=%s", i, code, errOut)
+		}
+		html := readFile(t, c.out)
+		want := "vscode://file" + filepath.ToSlash(real) + "/a.txt:1"
+		if !strings.Contains(html, want) {
+			t.Fatalf("case %d: 缺少源码根链接 %q", i, want)
+		}
+		if strings.Contains(html, "vscode://file"+filepath.ToSlash(repoDir)+"/a.txt") {
+			t.Fatalf("case %d: 链接仍指向 --repo（重放快照）", i)
+		}
+	}
+}
+
+// 多仓 source-root 映射同样支持 flag 在位置参数之前。
+func TestCLIMultiRepoSourceRootBeforeInput(t *testing.T) {
+	project, docPath, _ := multiRepoProject(t)
+	filled := filepath.Join(t.TempDir(), "filled.json")
+	if code, _, errOut := runCLI(t, "fill", docPath, "--repo", project, "-o", filled); code != 0 {
+		t.Fatalf("fill: %d %s", code, errOut)
+	}
+	realWeb, realAPI := t.TempDir(), t.TempDir()
+	htmlPath := filepath.Join(t.TempDir(), "review.html")
+	code, _, errOut := runCLI(t, "render",
+		"--source-root", "web="+realWeb, "--source-root", "api="+realAPI,
+		"--repo", project, filled, "-o", htmlPath)
+	if code != 0 {
+		t.Fatalf("render: code=%d err=%s", code, errOut)
+	}
+	html := readFile(t, htmlPath)
+	if !strings.Contains(html, "vscode://file"+filepath.ToSlash(realWeb)+"/src/a.ts:1") {
+		t.Fatalf("web 源码根未生效")
+	}
+	if !strings.Contains(html, "vscode://file"+filepath.ToSlash(realAPI)+"/b.go:3") {
+		t.Fatalf("api 源码根未生效")
+	}
+}

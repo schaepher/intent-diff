@@ -90,9 +90,11 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
     逐仓 head：`repos[].head_ref > meta.head_ref`。
 17. **展示顺序 ≠ 重放顺序**：`display_order` / `display_group` 只影响 render（未设置排在已设置之后，
     同值按声明顺序）；replay/fill/validate/深链/`change_index` 一律按 `changes` 数组顺序。
-18. **源码链接不猜**：`--source-root`（单仓 `<path>` / 多仓 `<id>=<path>`，可重复）> `repos[].source_root`
-    > 仓库 checkout 路径（项目根 + `repos[].path`）；没有源码根（含 render 无 `--repo`）时不生成链接。
-    链接是 `vscode://file/<abs>:<line>`，必须用 `template.URL`（html/template 会拒绝非 http scheme）。
+18. **源码链接不猜且不越界**：`--source-root`（单仓 `<path>` / 多仓 `<id>=<path>`，可重复）>
+    `repos[].source_root` > 仓库 checkout 路径（项目根 + `repos[].path`）；没有源码根（含 render
+    无 `--repo`）时不生成链接。链接是 `vscode://file/<abs>:<line>`，必须用 `template.URL`
+    （html/template 会拒绝非 http scheme）。`change.file` 必须过 `schema.CleanRelPath`
+    （拒绝绝对路径/盘符/`..`），`render.sourcePath` 还要再次确认最终绝对路径在源码根内——两侧都别放宽。
 19. **更新反馈与产物**：`diff`/`watch` 的变更说明只读比较文档，不参与校验；匹配 change 优先
     `change.id`（稳定标识），没有 id 才退回 `(repo,file,location)`（增删会错位）。评审产物放
     `.intent-review/`（已 gitignore），不随业务代码提交。
@@ -185,6 +187,8 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 | `internal/validate` 的 `ExcludeRules/Excluded`（评审范围回传） | `render/checklist_test.go` 的 scope 面板、`multirepo_test.go`、`validate --json` 契约、README「文件过滤」 |
 | `cmd/intent-review/build_cmd.go`（build/clean 入口） | build CLI 测试、`main.go` help、README「更新与反馈」「评审产物不入库」、AGENTS 契约 20 |
 | `internal/render`（分组标题/引用/行号链接/scope） | `render/checklist_test.go`、模板与 CSS、ui-check（自包含断言） |
+| `internal/render/link.go` + `internal/schema/path.go`（源码链接路径范围/转义） | `render/link_test.go`、`schema/path_test.go`、`ui-check` 的链接点击用例（`vscode://file/`、URI 编码、防注入） |
+| `scripts/ui-check.mjs`（浏览器自检/`PLAYWRIGHT_CHANNEL`） | 链接点击与编码断言、README「验证」、AGENTS 契约 18 |
 | CLI 参数/子命令 | `parseFlagSet`（flag 与位置参数可交错）、help 文本、CLI 测试的退出码 |
 | `examples/demo` 的 fixture | **head 必须是可编译的完整包**（`go build ./...` 会编译它），同步 `review.json` 的 patch 行号 |
 | `skills/intent-review/SKILL.md` | README 命令/错误码、`docs/agents.md` 的调用模板 |
@@ -216,6 +220,12 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
   agent 传 `--out-dir .` 时必须拒绝。
 - **页面 scope 断言别查 CSS 类名**：`scope-summary` 等类名在 CSS 里也有，断言要查
   `<details class="scope">` / `<code>…</code>` 这类真实标记。
+- **源码链接要两次校验**：`change.file` 在 schema 阶段拒绝绝对路径/`..`，`render` 侧再确认
+  绝对路径在源码根内；只做一次就会留下“绕过 --source-root”的口子。
+- **特殊文件名要同时验两件事**：URL 百分号编码（href 里不能出现 `"<>`）与 HTML 转义
+  （文本里 `<script>` 必须变成 `&lt;script&gt;`）；`template.URL` 只跳过 URL 过滤，不跳过属性转义。
+- **ui-check 不要点开真实编辑器**：用页面内 `click` 监听 + `preventDefault` 捕获 `vscode://` 目标；
+  本机浏览器用 `PLAYWRIGHT_CHANNEL=chrome`，未安装时要明确退出 2，别伪造通过。
 - **排除列表不是“放宽校验”的开关**：它只跳过覆盖检查；别把 `filefilter.Match` 塞进 replay/compareHead，
   否则 agent 能把错误内容写进测试文件而 validate 仍报 ok。改默认排除项要同步 SKILL，否则 agent 会少写意图。
 - **sticky 失效先查祖先 overflow**：`.intent-timeline` 的祖先（`.main`/`.section`）不能有

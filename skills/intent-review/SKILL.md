@@ -208,7 +208,9 @@ intent-review render review.filled.json -o review.html --repo .
 - 评审产物放 `.intent-review/`（已 gitignore）；收尾可以用 `intent-review clean` 清理。
   业务代码照常 commit/push/部署，**不要提交评审产物**。
 - 需要 VS Code 跳转时给 `--source-root`（单仓 `<path>`，多仓 `<repo-id>=<path>`），
-  不指定时默认仓库 checkout，不会跳到重放快照。
+  不指定时默认仓库 checkout，不会跳到重放快照。页面里的链接打开的是**本地当前文件**；
+  首次点击时浏览器会询问是否允许打开 VS Code，属于浏览器行为（页面不发起网络请求）。
+  `change.file` 必须是仓库相对路径（不能绝对路径/`..`），否则链接不会生成。
 
 ## 反模式（明确错误）
 

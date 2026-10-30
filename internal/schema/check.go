@@ -159,6 +159,13 @@ func checkChangeShape(doc Document, in *Intent, ch *Change, k int, wrap func(rep
 	}
 	if strings.TrimSpace(ch.File) == "" {
 		add(w(report.Error{Code: report.CodeSchemaInvalid, Message: "change.file 为空"}))
+	} else if _, ok := CleanRelPath(ch.File); !ok {
+		add(w(report.Error{Code: report.CodeSchemaInvalid, Message: "change.file 必须是仓库相对路径", Hint: "不能是绝对路径（含 Windows 盘符）或清理后越界的路径（如 ../x）"}))
+	}
+	if ch.RenamedFrom != "" {
+		if _, ok := CleanRelPath(ch.RenamedFrom); !ok {
+			add(w(report.Error{Code: report.CodeSchemaInvalid, Message: "renamed_from 必须是仓库相对路径", Hint: "不能是绝对路径或越界路径"}))
+		}
 	}
 	if strings.TrimSpace(ch.Location) == "" {
 		add(w(report.Error{Code: report.CodeSchemaInvalid, Message: "change.location 为空"}))

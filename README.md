@@ -110,10 +110,19 @@ patch 重放顺序 = `changes` 数组顺序（校验语义）；页面展示顺�
 
 - 源码根默认 = 仓库 checkout（项目根 + `repos[].path`；单仓 = `--repo`），**不会**指向重放快照。
 - 覆盖方式：`repos[].source_root`，或 CLI `--source-root <path>`（单仓）、
-  `--source-root <repo-id>=<path>`（多仓，可重复）。
+  `--source-root <repo-id>=<path>`（多仓，可重复；flag 放在文件名前后都可解析）。
+  示例：`intent-review build review.json --repo . --source-root web=/work/web --source-root api=/work/api`。
 - 没有源码根信息时（如 `render` 不带 `--repo`）不生成链接，避免误跳。
-- 特殊字符（空格/`#`/`?`/中文）按 URL 规则转义；删除文件**不生成**链接（本地已不存在）；
-  本地缺文件保留链接但标记 `is-missing` 并提示“本地源码中未找到该文件”。
+- **路径范围**：`change.file` 必须是仓库相对路径，结构校验直接拒绝绝对路径（含 Windows 盘符）
+  与清理后越界的路径（`../x`）；生成链接时再次清理并确认最终绝对路径仍在源码根内
+  （`filepath.Rel` 不以 `..` 开头），合法路径统一转换为绝对路径。这样链接无法绕过 `--source-root`。
+- 特殊字符（中文/空格/`#`/`?`/引号/尖括号）按 URL 规则百分号编码（`%E6%BA%90%E7%A0%81`、
+  `%20`、`%23`、`%3F`、`%22`、`%3C`），文件名在页面文本中走 HTML 转义，不会被当成属性或脚本。
+- 删除文件**不生成**链接（本地已不存在）；本地缺文件保留链接但标记 `is-missing`
+  并提示“本地源码中未找到该文件（可能未 checkout 或已删除）”。
+- 链接打开的是**本地当前文件**（head / 工作区），不是评审时重放的历史快照。
+  首次从 `file://` 页面点击时，浏览器会询问“是否允许打开 Visual Studio Code/外部应用”，
+  允许（可勾选记住）后即可直接跳转；这是浏览器行为，页面本身没有任何网络请求。
 - 行号定位：文件路径跳到该 change 的起始行（`new_start`）；右列每个行号可点，跳到精确行；
   左列是 State(i-1) 的历史内容，**故意不加**链接，避免误认成本地当前文件。
 
@@ -326,7 +335,15 @@ make test     # go test ./...
 make vet      # go vet ./...
 make demo     # 端到端 fill → validate → render
 make ui-check # 浏览器自检（需要 playwright；见 scripts/ui-check.mjs）
+
+# 复用本机已安装的 Chrome（避免依赖 Playwright 自带浏览器版本）
+PLAYWRIGHT_CHANNEL=chrome make ui-check
+# 也可在已构建的环境里直接跑：PLAYWRIGHT_CHANNEL=chrome node scripts/ui-check.mjs [review.html]
 ```
+
+`ui-check` 会验证：切换/深链/sticky/移动端/折叠/大评审/自包含（无外部请求），以及
+源码链接使用 `vscode://file/`、特殊文件名已 URI 编码、模拟点击能捕获目标地址且不启动编辑器。
+未安装对应 channel 时会明确报错并退出码 2（不会伪造通过）。
 
 ## 已知限制
 

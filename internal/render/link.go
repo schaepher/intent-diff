@@ -6,15 +6,45 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+
+	"intent-review/internal/schema"
 )
 
+// sourcePath 把仓库相对文件路径解析到源码根下的绝对路径。
+// 绝对路径、Windows 盘符、清理后越界（..）一律拒绝，并再次确认结果仍在 root 内，
+// 避免文件链接绕过 --source-root 指向的源码目录。
+func sourcePath(sourceRoot, file string) (string, bool) {
+	rel, ok := schema.CleanRelPath(file)
+	if !ok || strings.TrimSpace(sourceRoot) == "" {
+		return "", false
+	}
+	root, err := filepath.Abs(sourceRoot)
+	if err != nil {
+		return "", false
+	}
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if !within(root, abs) {
+		return "", false
+	}
+	return abs, true
+}
+
+func within(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // fileLink 生成 VS Code 跳转链接：vscode://file/<绝对路径>:<行号>。
-// sourceRoot 为空（未指定真实源码根）时不生成链接，避免误跳到重放用的临时快照。
+// 源码根为空或路径非法时不生成链接（避免误跳到重放快照或越界目录）。
 func fileLink(sourceRoot, file string, line int) template.URL {
-	if sourceRoot == "" || file == "" {
+	abs, ok := sourcePath(sourceRoot, file)
+	if !ok {
 		return ""
 	}
-	abs := filepath.Join(sourceRoot, filepath.FromSlash(file))
 	u := url.URL{Scheme: "vscode", Host: "file", Path: filepath.ToSlash(abs)}
 	s := u.String()
 	if line > 0 {
@@ -38,10 +68,11 @@ func withLineLinks(rows []Row, root, file string) {
 
 // sourceFileMissing 判断本地源码根下是否真的存在该文件（用于页面提示）。
 func sourceFileMissing(root, file string) bool {
-	if root == "" || file == "" {
+	abs, ok := sourcePath(root, file)
+	if !ok {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(file)))
+	_, err := os.Stat(abs)
 	return err != nil
 }
 

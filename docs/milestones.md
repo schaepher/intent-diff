@@ -161,6 +161,35 @@ $ intent-review clean --out-dir .intent-review
 clean: 已删除 .intent-review（评审产物不会进入业务提交）
 ```
 
+## M9 源码链接路径范围、特殊文件名转义、浏览器点击验证
+
+| 验收项 | 证据 |
+|---|---|
+| 拒绝绝对路径与越界路径（schema 阶段） | `TestCleanRelPath`、`TestCheckStructureRejectsUnsafeFilePaths` |
+| 链接限制在源码根内并转绝对路径 | `TestFileLinkStaysInsideSourceRoot`（`/etc/passwd`、`../x`、`a/../../b`、`C:/win.go` 均无链接） |
+| 特殊文件名 URI 编码（中文/空格/`#`/`?`/引号/尖括号） | `TestFileLinkEncodesSpecialCharacters` |
+| 页面 HTML 转义（不注入属性/脚本） | `TestBuildEscapesSpecialFileNames` |
+| `--source-root` 覆盖 `--repo`（不打开重放快照） | `TestCLIRenderSourceRootOverridesRepoAnyOrder`、`TestCLIMultiRepoSourceRootBeforeInput` |
+| flag 在文件名前后都可解析 | 同上（两种顺序各跑一次） |
+| 浏览器链接点击（捕获目标、不启动编辑器） | `scripts/ui-check.mjs`：`文件链接使用 vscode://file/`、`点击捕获 vscode:// 目标地址`、`点击不跳转页面（不启动编辑器）`、行号链接断言 |
+| 本机 Chrome 可选 | `PLAYWRIGHT_CHANNEL=chrome make ui-check`（未安装时退出 2 并提示） |
+
+### 复现记录（2026-11-02）
+
+```text
+$ node scripts/ui-check.mjs .tmp/demo/out/review.html
+ui-check: ok (.tmp/demo/out/review.html)
+  # 新增断言：vscode://file/ 协议、中文/空格/#/? 编码、点击捕获目标、页面不跳转
+
+$ PLAYWRIGHT_CHANNEL=chrome node scripts/ui-check.mjs .tmp/demo/out/review.html
+启动浏览器失败（PLAYWRIGHT_CHANNEL=chrome）: Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome
+Run "npx playwright install chrome"
+可设置 PLAYWRIGHT_CHANNEL=chrome 或 msedge 复用本机浏览器；不设置则使用 Playwright 自带浏览器。
+exit=2
+
+$ go test ./...        # 含 TestFileLinkStaysInsideSourceRoot / TestCleanRelPath / 转义与 CLI 顺序用例
+```
+
 ## 复现记录（2026-10-29，本机）
 
 ```text
