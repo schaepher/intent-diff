@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"intent-review/internal/filefilter"
 	"intent-review/internal/report"
 	"intent-review/internal/schema"
 )
@@ -105,4 +106,38 @@ func countIntents(doc schema.Document) int {
 		n += len(c.Intents)
 	}
 	return n
+}
+
+// stringList 是可重复的字符串 flag（--exclude a --exclude b）。
+type stringList []string
+
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+// filterFlags 是 validate/render/watch 共用的文件过滤参数。
+// 顺序：内置默认 → 配置 exclude → 配置 unexclude → CLI exclude → CLI unexclude（删除优先）。
+type filterFlags struct {
+	config    string
+	exclude   stringList
+	unexclude stringList
+}
+
+func addFilterFlags(fs *flag.FlagSet, ff *filterFlags) {
+	fs.StringVar(&ff.config, "config", "", "文件过滤配置（缺省在 repo 目录找 .intent-review.json）")
+	fs.Var(&ff.exclude, "exclude", "追加排除项（可重复；不含 / 时匹配文件名）")
+	fs.Var(&ff.unexclude, "unexclude", "从排除列表删除某项（可重复，按字面值）")
+}
+
+// build 合并配置文件与命令行参数；第二个返回值是实际使用的配置文件路径（未使用时为空）。
+func (ff *filterFlags) build(repoDir string) (*filefilter.List, string, error) {
+	cfg, path, err := filefilter.Load(ff.config, repoDir)
+	if err != nil {
+		return nil, "", err
+	}
+	list := filefilter.Resolve(cfg).Add(ff.exclude...).Remove(ff.unexclude...)
+	return list, path, nil
 }

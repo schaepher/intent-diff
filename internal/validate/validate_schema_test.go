@@ -10,7 +10,7 @@ import (
 func TestRunStructuralErrorSkipsRepo(t *testing.T) {
 	doc := docFor("whatever", "whatever")
 	doc.Chains[0].Intents[0].Changes[0].BusinessExplanation = ""
-	res, err := Run(doc, "/nonexistent-repo-path")
+	res, err := Run(doc, "/nonexistent-repo-path", Options{})
 	if err != nil {
 		t.Fatalf("structural errors must not require repo: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestRunUnfilledPatchHint(t *testing.T) {
 	doc := docFor("whatever", "whatever")
 	doc.Chains[0].Intents[0].Changes[0].Lines = nil
 	doc.Chains[0].Intents[0].Changes[0].Patch = []string{"@@ -1 +1 @@", "-a", "+b"}
-	res, err := Run(doc, "/nonexistent-repo")
+	res, err := Run(doc, "/nonexistent-repo", Options{})
 	if err != nil {
 		t.Fatalf("unfilled check must not need repo: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRunBinaryWarning(t *testing.T) {
 	_ = base
 	head2 := repo.Commit("add binary")
 	doc.Meta.HeadRef = head2
-	res, err := Run(doc, repo.Dir)
+	res, err := Run(doc, repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

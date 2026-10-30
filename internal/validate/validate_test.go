@@ -92,7 +92,7 @@ func newHeadFixture(t *testing.T) (*testutil.Repo, string, string) {
 
 func TestRunOK(t *testing.T) {
 	repo, base, head := newHeadFixture(t)
-	res, err := Run(docFor(base, head), repo.Dir)
+	res, err := Run(docFor(base, head), repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestRunContextMismatch(t *testing.T) {
 	repo, base, head := newHeadFixture(t)
 	doc := docFor(base, head)
 	doc.Chains[0].Intents[1].Changes[0].Lines[0].Content = "\tlegacyLimiter.Wait()"
-	res, err := Run(doc, repo.Dir)
+	res, err := Run(doc, repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestRunFinalStateMismatch(t *testing.T) {
 	repo, base, _ := newHeadFixture(t)
 	repo.Write("a.go", stage2Go+"\n// extra\n")
 	head := repo.Commit("head with extra")
-	res, err := Run(docFor(base, head), repo.Dir)
+	res, err := Run(docFor(base, head), repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRunChainIsolation(t *testing.T) {
 			}},
 		}},
 	})
-	res, err := Run(doc, repo.Dir)
+	res, err := Run(doc, repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestRunSameFileStaleLineNumber(t *testing.T) {
 	repo, base, head := newHeadFixture(t)
 	doc := docFor(base, head)
 	doc.Chains[0].Intents[1].Changes[0].OldStart = 6
-	res, err := Run(doc, repo.Dir)
+	res, err := Run(doc, repo.Dir, Options{})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

@@ -75,6 +75,20 @@ bash scripts/check-file-size.sh
 | 端到端 demo（两提交 fixture + 骨架 JSON） | `examples/demo/run.sh` → `.tmp/demo/out/{review.filled.json,validate.json,review.html}` |
 | demo 的 validate `ok: true` | `bash examples/demo/run.sh` 输出 `{"ok": true, "errors": []}` |
 
+## M6 文件过滤（排除列表）
+
+| 验收项 | 证据 |
+|---|---|
+| 内置排除 `*_test.go`（任意深度） | `TestDefaultExcludesTestFilesAtAnyDepth`、`TestRunCoverageSkipsDefaultExcludedTestFile` |
+| 内置排除 vendor/node_modules | `TestDefaultExcludesVendorAndNodeModules` |
+| 模式语义（basename/锚定/`**`/`?`/字符集/结尾 `/`） | `TestPatternSemantics`、`TestWindowsSeparatorsAreNormalized` |
+| 只影响覆盖检查，不放过已声明 change | `TestRunFilterDoesNotSkipReplayOfExcludedFile` |
+| 配置文件增删（`.intent-review.json` / `--config`） | `TestLoadExplicitConfig`、`TestLoadDiscoversConfigInDir`、`TestCLIValidateConfigExclude` |
+| CLI 重复 `--exclude`、`--unexclude` 恢复内置项 | `TestCLIExcludeFlagRepeatable`、`TestCLIUnexcludeFlagRestoresCoverage` |
+| 配置未知字段/非法 JSON → 退出码 2 | `TestLoadRejectsUnknownFieldAndBadJSON`、`TestCLIInvalidConfigFails` |
+| render 附带校验同样过滤；无 `--repo` 不读配置 | `TestCLIRenderUsesFilter` |
+| 配置覆盖优先级（默认 → 配置 → CLI，删除优先） | `TestResolveAppliesExcludeThenUnexclude`、`TestResolveEmptyConfigKeepsDefaults` |
+
 ## 复现记录（2026-10-29，本机）
 
 ```text
@@ -91,6 +105,13 @@ $ go test -race ./...        # 全绿（同上包列表）
 $ bash examples/demo/run.sh  # fill ok / validate ok:true / render ok
 $ node scripts/ui-check.mjs  # ui-check: ok
 $ bash scripts/check-file-size.sh  # ok (limit=300)
+
+# 文件过滤实测（临时仓库：改 a.txt + 新增 a_test.go + docs/g.md，只覆盖 a.txt）
+$ intent-review validate review.json --repo .            # 仅 docs/g.md 报未覆盖，exit 1（测试文件已排除）
+$ intent-review validate review.json --repo . --exclude 'docs/**'   # ok，exit 0
+$ intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_test.go'  # a_test.go 重新报未覆盖，exit 1
+$ printf '{"file_filter":{"exclude":["docs/**"]}}' > .intent-review.json \
+  && intent-review validate review.json --repo .          # ok（file filter: 已加载…）
 ```
 
 注：`go build ./...` 也会编译 `examples/demo/files/{base,head}` 两个 fixture 包，

@@ -49,11 +49,11 @@ func usage(w io.Writer) {
 	fmt.Fprint(w, `intent-review — 意图链代码评审生成器
 
 用法:
-  intent-review validate <file.json> [--repo .] [--json]
+  intent-review validate <file.json> [--repo .] [--json] [--config F] [--exclude G] [--unexclude G]
   intent-review fill     <file.json> [--repo .] [-o <filled.json>]
-  intent-review render   <file.json> -o <review.html> [--repo .] [--max-lines N]
+  intent-review render   <file.json> -o <review.html> [--repo .] [--max-lines N] [--exclude G]
   intent-review schema   [--output schema.json]
-  intent-review watch    <file.json> -o <review.html> [--repo .] [--max-lines N]
+  intent-review watch    <file.json> -o <review.html> [--repo .] [--max-lines N] [--exclude G]
   intent-review version
 
 命令:
@@ -64,5 +64,9 @@ func usage(w io.Writer) {
   watch     文件变化时自动重渲染
 
 退出码: 0 成功 / 1 校验失败 / 2 用法或 IO 错误 / 3 schema 版本不支持
+
+文件过滤（validate/render/watch 的覆盖检查）:
+  内置排除 *_test.go、**/vendor/**、**/node_modules/**；
+  用 --exclude 追加、--unexclude 删除，或在 repo 目录放 .intent-review.json（--config 指定路径）。
 `)
 }

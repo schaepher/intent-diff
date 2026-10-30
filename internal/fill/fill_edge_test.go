@@ -86,7 +86,7 @@ func TestRunNewFileAndDeleted(t *testing.T) {
 	if df.OldStart != 1 || df.NewStart != 0 {
 		t.Fatalf("deleted starts = %d/%d", df.OldStart, df.NewStart)
 	}
-	vres, err := validate.Run(filled, repo.Dir)
+	vres, err := validate.Run(filled, repo.Dir, validate.Options{})
 	if err != nil || !vres.OK {
 		t.Fatalf("validate: %v %+v", err, vres.Errors)
 	}
@@ -120,7 +120,7 @@ func TestRunCRLFFile(t *testing.T) {
 	if got := filled.Chains[0].Intents[0].Changes[0].Lines[0].Content; got != "one\r" {
 		t.Fatalf("CR 被剥掉: %q", got)
 	}
-	vres, err := validate.Run(filled, repo.Dir)
+	vres, err := validate.Run(filled, repo.Dir, validate.Options{})
 	if err != nil || !vres.OK {
 		t.Fatalf("validate: %v %+v", err, vres.Errors)
 	}

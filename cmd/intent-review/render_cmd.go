@@ -20,8 +20,10 @@ func runRender(args []string, stdout, stderr io.Writer) int {
 	outPath := fs.String("o", "", "输出 HTML 文件（必填）")
 	maxLines := fs.Int("max-lines", render.DefaultMaxLines, "大型评审降级阈值（总变更行数）")
 	noHighlight := fs.Bool("no-highlight", false, "关闭语法高亮（调试用）")
+	ff := &filterFlags{}
+	addFilterFlags(fs, ff)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "用法: intent-review render <file.json> -o <review.html> [--repo .] [--max-lines N]")
+		fmt.Fprintln(stderr, "用法: intent-review render <file.json> -o <review.html> [--repo .] [--max-lines N] [--config F] [--exclude G] [--unexclude G]")
 		fs.PrintDefaults()
 	}
 	if err := parseFlagSet(fs, args); err != nil {
@@ -36,7 +38,7 @@ func runRender(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	return renderFile(fs.Arg(0), *outPath, *repoDir, *maxLines, *noHighlight, stdout, stderr)
+	return renderFile(fs.Arg(0), *outPath, *repoDir, *maxLines, *noHighlight, ff, stdout, stderr)
 }
 
 // isValidateWarning 判断警告是否已经由 validate 打印过（避免重复）。
@@ -50,7 +52,7 @@ func isValidateWarning(printed []report.Error, w report.Error) bool {
 }
 
 // renderFile 是 render/watch 共用的渲染流程（含按需 fill 与校验）。
-func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, stdout, stderr io.Writer) int {
+func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, ff *filterFlags, stdout, stderr io.Writer) int {
 	doc, raw, code := loadDoc(input, stderr)
 	if code != 0 {
 		return code
@@ -85,7 +87,13 @@ func renderFile(input, outPath, repoDir string, maxLines int, noHighlight bool, 
 
 	opts := render.Options{MaxLines: maxLines, DisableHighlight: noHighlight}
 	if repoDir != "" {
-		vres, err := validate.Run(doc, repoDir)
+		// 没有 --repo 就没有覆盖检查，因此也不需要（不读取）文件过滤配置。
+		files, _, err := ff.build(repoDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "文件过滤配置无效: %v\n", err)
+			return 2
+		}
+		vres, err := validate.Run(doc, repoDir, validate.Options{Files: files})
 		if err != nil {
 			fmt.Fprintf(stderr, "校验无法执行（继续渲染）: %v\n", err)
 		} else {

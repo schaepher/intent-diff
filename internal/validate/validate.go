@@ -8,13 +8,21 @@ import (
 	"fmt"
 	"sort"
 
+	"intent-review/internal/filefilter"
 	"intent-review/internal/replay"
 	"intent-review/internal/report"
 	"intent-review/internal/schema"
 )
 
+// Options 是校验的可选参数。
+type Options struct {
+	// Files 是覆盖检查的排除列表（nil 表示内置默认：filefilter.Default()）。
+	// 它只影响「哪些文件不需要意图覆盖」，不改变重放与最终状态比对。
+	Files *filefilter.List
+}
+
 // Run 校验整份文档。返回的 error 只表示用法/IO 级失败（退出码 2）。
-func Run(doc schema.Document, repoDir string) (report.Result, error) {
+func Run(doc schema.Document, repoDir string, opts Options) (report.Result, error) {
 	errs := schema.CheckStructure(doc)
 	if report.HasBlocking(errs) {
 		return report.NewResult(errs), nil
@@ -53,7 +61,11 @@ func Run(doc schema.Document, repoDir string) (report.Result, error) {
 	// 重放全部成功时，再检查 base→head 的变更是否都被某条链覆盖：
 	// 漏掉整个文件、未声明的重命名都会在这里暴露（设计文档 §7.2「遗漏变更」）。
 	if !stopped {
-		coverageErrs, err := checkCoverage(repo, doc.Meta.BaseCommit, head, touched)
+		files := opts.Files
+		if files == nil {
+			files = filefilter.Default()
+		}
+		coverageErrs, err := checkCoverage(repo, doc.Meta.BaseCommit, head, touched, files)
 		if err != nil {
 			return report.Result{}, err
 		}
@@ -87,8 +99,9 @@ func unfilledChanges(doc schema.Document) []report.Error {
 	return errs
 }
 
-// checkCoverage 要求 base→head 的每个变更路径都被至少一条链触及。
-func checkCoverage(repo *replay.Repo, baseRef, head string, touched map[string]bool) ([]report.Error, error) {
+// checkCoverage 要求 base→head 的每个变更路径都被至少一条链触及；
+// 命中排除列表的路径（如 *_test.go）跳过（设计文档 §7.2 的补充，见 README 实现约定）。
+func checkCoverage(repo *replay.Repo, baseRef, head string, touched map[string]bool, files *filefilter.List) ([]report.Error, error) {
 	base, err := repo.Resolve(baseRef)
 	if err != nil {
 		return nil, fmt.Errorf("解析 meta.base_commit 失败: %w", err)
@@ -100,13 +113,13 @@ func checkCoverage(repo *replay.Repo, baseRef, head string, touched map[string]b
 	sort.Strings(paths)
 	var errs []report.Error
 	for _, p := range paths {
-		if touched[p] {
+		if touched[p] || files.Match(p) {
 			continue
 		}
 		errs = append(errs, report.Error{
 			Code: report.CodeFinalStateMismatch, File: p,
 			Message: "该文件在 base..head 之间有变更，但没有被任何意图覆盖",
-			Hint:    "补一个意图/change 覆盖它；重命名请用 renamed_from 声明（否则旧路径会表现为未覆盖的删除）。",
+			Hint:    "补一个意图/change 覆盖它；重命名请用 renamed_from 声明（否则旧路径会表现为未覆盖的删除）。若属于测试/第三方目录，可用 --exclude 或配置文件排除。",
 		})
 	}
 	return errs, nil

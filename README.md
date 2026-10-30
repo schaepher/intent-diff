@@ -35,9 +35,9 @@ bash examples/demo/run.sh
 
 | 命令 | 职责 |
 |---|---|
-| `validate <file.json> --repo . [--json]` | schema + 链条重放 + 最终状态比对；`--json` 输出结构化诊断 |
+| `validate <file.json> --repo . [--json] [--config F] [--exclude G] [--unexclude G]` | schema + 链条重放 + 最终状态比对；`--json` 输出结构化诊断 |
 | `fill <file.json> --repo . [-o out.json]` | patch → `lines`/`old_start`/`new_start`，逐意图推进状态；幂等 |
-| `render <file.json> -o review.html [--repo .] [--max-lines N] [--no-highlight]` | 生成自包含 HTML；输入仍是 patch 时自动在内存里 fill（需 `--repo`）；`--no-highlight` 关闭高亮 |
+| `render <file.json> -o review.html [--repo .] [--max-lines N] [--no-highlight] [--config F] [--exclude G] [--unexclude G]` | 生成自包含 HTML；输入仍是 patch 时自动在内存里 fill（需 `--repo`）；`--no-highlight` 关闭高亮 |
 | `schema [--output schema.json]` | 输出 JSON Schema（供 agent/编辑器补全） |
 | `watch <file.json> -o review.html [...]` | 文件变化自动重渲染 |
 
@@ -45,6 +45,30 @@ bash examples/demo/run.sh
 人类可读诊断写 **stderr**（行尾带错误码，如 `(CONTEXT_MISMATCH)`），`--json` 写 **stdout**。
 
 flag 与位置参数可任意交错（`fill review.json --repo . -o out.json` 或 `fill --repo . review.json -o out.json`）。
+
+## 文件过滤（排除列表）
+
+`validate`、`render`/`watch` 的附带校验在做 base→head 覆盖检查前会先过滤路径：
+命中排除列表的文件**不要求被意图覆盖**。注意它**只影响覆盖检查**——重放与最终状态比对不受影响，
+已经声明成 change 的测试文件仍会逐行校验。
+
+内置默认：`*_test.go`、`**/vendor/**`、`**/node_modules/**`。
+
+增删方式（从左到右依次生效：内置默认 → 配置 `exclude` → 配置 `unexclude` → CLI `--exclude` → CLI `--unexclude`；
+同一层内删除优先）：配置文件放在仓库根，或用 `--config <path>` 显式指定（此时不再读仓库内配置）。
+
+```json
+{ "file_filter": { "exclude": ["docs/**", "*.pb.go"], "unexclude": ["*_test.go"] } }
+```
+
+```bash
+intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_test.go'
+```
+
+- `--exclude` / `--unexclude` 均可重复；`unexclude` 按模式**字面值**删除。
+- 配置文件名为 `.intent-review.json`；未知字段或非法 JSON 直接报用法错误（退出码 2），不静默忽略。
+- 模式语义：不含 `/` 时匹配**文件名**（任意深度，如 `*_test.go`）；含 `/` 时锚定仓库根；
+  `**` 跨多级目录（含 0 级）、`*` 不跨 `/`、`?` 单字符、`[abc]`/`[!abc]` 字符集；结尾 `/` 等价于 `<dir>/**`。
 
 ## 页面能力
 
@@ -129,6 +153,11 @@ agent **只输出 JSON**，不写 HTML；渲染与样式由工具负责。
    保证与重放语义一致。
 9. **已知盲区**（设计文档 §7.3）：链条重放无法捕获“把后续意图的代码提前放进当前 context”
    这类自洽但语义错误的拆分。第一版靠 skill 约束 + 评审者肉眼发现；阶段快照校验列入后续版本。
+10. **文件过滤只作用于覆盖检查**：`internal/filefilter` 的排除列表只让 `base..head` 覆盖检查跳过命中路径；
+    重放、最终状态比对、渲染都不受影响（已声明的 change 仍逐行校验）。内置默认
+    `*_test.go` / `**/vendor/**` / `**/node_modules/**`；配置文件固定名 `.intent-review.json`，
+    在 `--repo` 目录发现（`--config` 显式覆盖，此时不再读仓库内配置），未知字段视为配置错误（退出码 2）。
+    需要让内置项重新参与覆盖检查时用 `unexclude`（按字面值删除）。
 
 ## 目录结构
 
@@ -136,6 +165,7 @@ agent **只输出 JSON**，不写 HTML；渲染与样式由工具负责。
 cmd/intent-review/     CLI 入口（validate/fill/render/schema/watch）
 internal/schema        结构体、JSON Schema、版本与结构校验
 internal/replay        git base/head 读取、逐意图状态重放（fill 与 validate 共用）
+internal/filefilter    覆盖检查的排除列表（内置 *_test.go 等）+ .intent-review.json 读取
 internal/diffpatch     unified diff（单 hunk）解析
 internal/fill          patch 填充、行号回填、JSON 树合并（保留未知字段）
 internal/validate      链条重放校验、最终状态比对、结构化错误

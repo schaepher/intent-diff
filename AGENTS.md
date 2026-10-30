@@ -30,6 +30,7 @@
 cmd/intent-review/      CLI：validate/fill/render/schema/watch（只做参数解析、调用、输出）
 internal/schema/        数据模型、JSON Schema、版本检查、结构校验
 internal/replay/        git base/head 读取 + 逐意图状态重放（fill 与 validate 的唯一语义来源）
+internal/filefilter/    覆盖检查的排除列表（内置 *_test.go 等）+ .intent-review.json 读取
 internal/diffpatch/     unified diff 单 hunk 解析（含 CRLF 保留）
 internal/fill/          patch→lines/行号；JSON 树合并（保留未知字段）
 internal/validate/      结构校验 + 重放 + 最终状态比对 + base..head 覆盖检查
@@ -74,6 +75,12 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
 13. **binary change 不参与重放**（warning `BINARY_CHANGE_SKIPPED`，最终比对跳过该文件）；
     **CRLF 行内容逐字保留**（只对 diff 头去 `\r`，不要剥行内容）；仓库路径必须是相对路径且禁止越界。
 14. **高亮降级不阻塞**：无 lexer → 纯文本 + `HIGHLIGHT_FALLBACK` warning；`--no-highlight` 时不得误报。
+15. **文件过滤只影响覆盖检查**（`internal/filefilter`）：排除列表只在 validate 的 base..head
+    覆盖检查里跳过命中路径；重放、`compareHead`、渲染**都不得**跳过（已声明的 change 必须逐行校验）。
+    内置默认 `*_test.go` / `**/vendor/**` / `**/node_modules/**`；增删入口：`.intent-review.json`
+    （在 `--repo` 目录发现，`--config` 显式覆盖）与 `--exclude` / `--unexclude`（可重复，删除按字面值）。
+    生效顺序：默认 → 配置 exclude → 配置 unexclude → CLI exclude → CLI unexclude。
+    配置未知字段/非法 JSON 退出码 2（不静默忽略）；`render` 无 `--repo` 时不读配置。
 
 ## 常用命令（提交前必须过）
 
@@ -147,6 +154,7 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 | `internal/render/web/*`（DOM/类名/数据属性） | `app.js` 选择器、`render_*_test.go` 断言、`scripts/ui-check.mjs` |
 | `internal/render`（Options/默认阈值） | CLI flag、README、milestones 数据、ui-check 的 `--max-lines` 用例 |
 | `internal/highlight`（降级/切行） | fallback warning 测试、`--no-highlight` 测试、CSS 的 `tok-*` 类 |
+| `internal/filefilter`（默认排除项/模式语义/配置格式） | validate 覆盖测试、CLI 测试（config/--exclude/--unexclude/退出码 2）、README「文件过滤」与实现约定、AGENTS 契约 15、SKILL 提示 |
 | CLI 参数/子命令 | `parseFlagSet`（flag 与位置参数可交错）、help 文本、CLI 测试的退出码 |
 | `examples/demo` 的 fixture | **head 必须是可编译的完整包**（`go build ./...` 会编译它），同步 `review.json` 的 patch 行号 |
 | `skills/intent-review/SKILL.md` | README 命令/错误码、`docs/agents.md` 的调用模板 |
@@ -165,6 +173,8 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
   必须把"对齐变化"写进 patch（`del`+`add`），否则最终状态与 head 差一个空格。
 - **`hidden` 要写在严格祖先上**：面板可见性测试要区分"panel 自身 hidden"与"祖先链 hidden"；
   初始态只有 1 个 panel 可交互，切换后旧链的 panel 不应重新出现。
+- **排除列表不是“放宽校验”的开关**：它只跳过覆盖检查；别把 `filefilter.Match` 塞进 replay/compareHead，
+  否则 agent 能把错误内容写进测试文件而 validate 仍报 ok。改默认排除项要同步 SKILL，否则 agent 会少写意图。
 - **sticky 失效先查祖先 overflow**：`.intent-timeline` 的祖先（`.main`/`.section`）不能有
   `overflow: hidden/auto/scroll`；diff 的超宽滚动只放在 `.diff-wrap`。
 - **diff 表头不要 sticky**：会和 sticky 状态机重叠（曾被遮挡），表头保持静态。

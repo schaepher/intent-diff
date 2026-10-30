@@ -34,6 +34,10 @@ git diff <base> <head>            # 只看，不要直接按 hunk 分配给意�
 
 需要时读调用方、测试、配置，确认每个变更的**业务理由**。
 
+覆盖检查默认排除 `*_test.go`、`**/vendor/**`、`**/node_modules/**`：这些文件的变更**不需要**
+写意图（要改默认列表用 `--exclude` / `--unexclude` 或 `.intent-review.json`，见 README）。
+其余变更文件必须被某条链覆盖；被排除的文件一旦写进 change，仍会逐行重放校验。
+
 ### 2. 识别独立需求
 
 - 完全独立的需求 → 各自一条 `chain`（链间状态隔离，各自从自己的 `base_commit` 重放）。
@@ -126,7 +130,7 @@ intent-review validate review.filled.json --repo . --json
 | `PATCH_PARSE_ERROR` | hunk 头/hunk 数量/行数不符 | 一个 change 一个 hunk；行首保留空格 |
 | `PATCH_CONTEXT_MISMATCH` | fill 应用 patch 时上下文不匹配 | 用上一状态重新生成该 hunk |
 | `CONTEXT_MISMATCH` | 重放时 before 与上一状态 after 不一致 | 检查意图顺序、行号、是否提前放入后续代码 |
-| `FINAL_STATE_MISMATCH` | 重放结果 ≠ head，或 base..head 有变更未被任何链覆盖 | 补漏掉的意图/change（含删除/新增/重命名；整文件漏拆也会报这条） |
+| `FINAL_STATE_MISMATCH` | 重放结果 ≠ head，或 base..head 有变更未被任何链覆盖 | 补漏掉的意图/change（含删除/新增/重命名；整文件漏拆也会报这条）。测试/依赖目录默认不要求覆盖；其它文件不能靠排除列表绕过 |
 | `FILE_NOT_FOUND` | base 中不存在该文件 | 新增文件要 `new_file: true` |
 | `RENAME_MISMATCH` | renamed_from 与状态不符 | 修正来源路径或拆成新增/删除 |
 | `HIGHLIGHT_FALLBACK`（warning） | 无 lexer | 不阻塞；可忽略 |

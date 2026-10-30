@@ -12,6 +12,10 @@ intent-review render   review.filled.json -o review.html --repo .
 `intent-review` 可替换为 `go run ./cmd/intent-review`（在本仓库内）或已安装的二进制路径。
 agent **只写 JSON**，不写 HTML。
 
+覆盖检查默认排除 `*_test.go` / `**/vendor/**` / `**/node_modules/**`，测试文件不必写意图；
+目标仓库需要不同的评审范围时，让 agent 在 `validate`/`render` 上加 `--exclude <glob>` /
+`--unexclude <glob>`（或在仓库根放 `.intent-review.json`），不要把测试文件硬塞进意图链。
+
 ## 通用前置
 
 - 目标仓库根执行（`--repo` 缺省为当前目录）。

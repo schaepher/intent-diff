@@ -96,7 +96,7 @@ func TestRunFillsLines(t *testing.T) {
 		t.Fatalf("change2 starts = %+v", ch2)
 	}
 	// 填充结果必须能被 validate 重放通过。
-	vres, err := validate.Run(filled, repo.Dir)
+	vres, err := validate.Run(filled, repo.Dir, validate.Options{})
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
