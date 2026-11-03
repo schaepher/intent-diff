@@ -40,6 +40,7 @@ func TestBuildIntentTreeStructure(t *testing.T) {
 	for _, want := range []string{
 		`data-tree="1"`, "全局意图树", "4 个意图 · 1 个根 · 1 处分支",
 		`<section class="tree-section" id="intent-tree" data-tree-section hidden>`,
+		`class="tree-canvas"`, "自上而下",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("缺少 %q", want)

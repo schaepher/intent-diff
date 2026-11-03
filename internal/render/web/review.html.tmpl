@@ -55,11 +55,13 @@
     <section class="tree-section" id="intent-tree" data-tree-section hidden>
       <header class="tree-head">
         <h1 class="tree-title">全局意图树</h1>
-        <p class="tree-sub">从全局看意图之间的关系（允许分叉）；点击节点跳到对应链的意图。重放仍按各链的 changes 顺序。</p>
+        <p class="tree-sub">自上而下看意图之间的关系（允许分叉）；点击节点跳到对应链的意图。重放仍按各链的 changes 顺序。</p>
       </header>
-      <ul class="tree-roots">
-        {{range .Tree.Roots}}{{template "tree-node" .}}{{end}}
-      </ul>
+      <div class="tree-canvas">
+        <ul class="tree-roots">
+          {{range .Tree.Roots}}{{template "tree-node" .}}{{end}}
+        </ul>
+      </div>
     </section>
     {{end}}
     {{range $ci, $c := .Chains}}
