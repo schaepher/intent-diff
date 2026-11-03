@@ -199,6 +199,7 @@ $ go test ./...        # 含 TestFileLinkStaysInsideSourceRoot / TestCleanRelPat
 | 树结构渲染：自上而下布局/根/分支/跨链/孤儿/隐藏初始态/深链 | `TestBuildIntentTreeStructure`、`TestBuildIntentTreeOrphanNodes`、`TestTreeHrefEscapesIDs` |
 | 树入口与跳转（点击树、节点跳链、`#tree` 深链） | `make ui-check`：`点击树入口显示全局意图树`、`树视图写入 #tree`、`树节点跳转到对应链意图`、`深链 #tree 直接打开意图树` |
 | 树不参与重放 | 契约：重放仍按 `changes` 数组；`TestCheckIntentTreeValid` 的文档可正常 fill/validate |
+| 默认生成树结构（不写 parent 也线性成树；显式父节点分叉） | `TestBuildImplicitLinearTree`、`TestBuildImplicitAndExplicitBranch`；SKILL 硬性约束 13 + 流程步骤 2 |
 | demo 展示跨链分支 | `examples/demo/review.json` 的 parent：intent-002→001、003→002、audit-001→002 |
 
 ### 复现记录（2026-11-02）

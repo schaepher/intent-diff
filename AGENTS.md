@@ -104,8 +104,9 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
     别把守卫放宽成任意路径（agent 会传 `--out-dir .`）。
 21. **稳定 change 标识**：`change.id` 可选但修订时必须不变，意图内唯一（`DUPLICATE_CHANGE_ID`）；
     `references` 解析不到目标时渲染成纯文本，不要编造锚点；深链/`change_index` 仍是声明下标。
-22. **全局意图树只读**：`intent.parent`（`<chain-id>/<intent-id>` 或全局唯一 id）只决定树结构，
-    重放仍按链内 `changes` 数组顺序。解析统一 `schema.ResolveParent`、校验 `schema.CheckIntentTree`
+22. **全局意图树只读且默认生成**：`intent.parent`（`<chain-id>/<intent-id>` 或全局唯一 id）只决定
+    树结构，重放仍按链内 `changes` 数组顺序。未写 parent 时 render 默认把意图挂到**链内前一个
+    意图**下（每链首意图为根），所以任何文档都会得到自上而下的树；显式 parent 用于分叉/跨链。解析统一 `schema.ResolveParent`、校验 `schema.CheckIntentTree`
     （缺失/歧义/自引用/环 → `SCHEMA_INVALID`）；render 遇到坏 parent 降级为根并标 `Orphan`，
     不 panic/不丢节点。树入口按钮不要加 `.chain-item` 类（会被链切换逻辑接管）。
 23. **评审范围回传契约**：`validate.Result.ExcludeRules/Excluded` 是页面“评审范围”面板的唯一数据源

@@ -29,6 +29,8 @@ agent **只写 JSON**，不写 HTML。
 
 变更要写稳定 `id`（修订时不变），调用方用 `references` 链接到后面的实现分组；页面会展示
 本次生效的排除规则与被跳过的文件（`validate --json` 的 `exclude_rules`/`excluded[]`）。
+每个非根意图默认写 `parent`（链内指向上一意图；分支/跨链按真实依赖），生成的页面自带
+自上而下的「全局意图树」，不要只产出互不关联的线性链。
 
 覆盖检查默认排除 `*_test.go` / `**/vendor/**` / `**/node_modules/**`，测试文件不必写意图；
 目标仓库需要不同的评审范围时，让 agent 在 `validate`/`render` 上加 `--exclude <glob>` /

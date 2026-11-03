@@ -38,8 +38,10 @@ type treeNode struct {
 	number int
 }
 
-// buildTree 构建意图树。parent 缺失/歧义/环都不阻塞渲染：
-// 相关节点挂到根上并标记 Orphan，真正的诊断由 validate 报出。
+// buildTree 构建意图树。默认结构：链内未写 parent 时，意图挂到链内前一个意图下
+// （每链首意图是根），因此任何文档都会得到自上而下的树；写 parent 用于分支/跨链。
+// 显式 parent 缺失/歧义/环不阻塞渲染：相关节点挂到根上并标记 Orphan，
+// 真正的诊断由 validate 报出。
 func buildTree(doc schema.Document) treeView {
 	nodes := map[schema.IntentKey]treeNode{}
 	var order []schema.IntentKey
@@ -52,11 +54,19 @@ func buildTree(doc schema.Document) treeView {
 	}
 	children := map[schema.IntentKey][]schema.IntentKey{}
 	orphan := map[schema.IntentKey]bool{}
+	lastInChain := map[string]schema.IntentKey{}
 	var roots []schema.IntentKey
 	for _, key := range order {
 		n := nodes[key]
+		prev, hasPrev := lastInChain[n.chain.ID]
+		lastInChain[n.chain.ID] = key
 		if strings.TrimSpace(n.intent.Parent) == "" {
-			roots = append(roots, key)
+			// 默认结构：链内线性挂到前一个意图；每链首意图是根。
+			if hasPrev {
+				children[prev] = append(children[prev], key)
+			} else {
+				roots = append(roots, key)
+			}
 			continue
 		}
 		target, st := doc.ResolveParent(key, n.intent.Parent)

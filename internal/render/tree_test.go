@@ -96,3 +96,48 @@ func TestTreeHrefEscapesIDs(t *testing.T) {
 		t.Fatalf("treeHref = %q", got)
 	}
 }
+
+// 默认结构：不写 parent 也生成链内线性树（每链首意图为根）。
+func TestBuildImplicitLinearTree(t *testing.T) {
+	doc := treeFixture()
+	for ci := range doc.Chains {
+		for ii := range doc.Chains[ci].Intents {
+			doc.Chains[ci].Intents[ii].Parent = ""
+		}
+	}
+	// 同一链内追加一个意图，确认隐式挂到前一个意图。
+	doc.Chains[0].Intents = append(doc.Chains[0].Intents, schema.Intent{
+		ID: "i4", Title: "收尾", Summary: "s", Changes: doc.Chains[0].Intents[0].Changes,
+	})
+	res, err := Build(doc, Options{DisableHighlight: true})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	html := string(res.HTML)
+	if !strings.Contains(html, "5 个意图 · 2 个根") {
+		t.Fatalf("每链首意图应为根: %s", "5 个意图 · 2 个根")
+	}
+	// i1→i2→i3→i4（3 个 children 列表）+ j1 无子节点 → 3 个嵌套列表。
+	if n := strings.Count(html, `<ul class="tree-children">`); n != 3 {
+		t.Fatalf("隐式线性树嵌套列表 = %d, want 3", n)
+	}
+}
+
+// 显式 parent 指向非前一个意图时，按显式关系分叉；其余仍走隐式线性。
+func TestBuildImplicitAndExplicitBranch(t *testing.T) {
+	doc := treeFixture()
+	doc.Chains = doc.Chains[:1]
+	doc.Chains[0].Intents = []schema.Intent{
+		{ID: "i1", Title: "根", Summary: "s", Changes: doc.Chains[0].Intents[0].Changes},
+		{ID: "i2", Title: "线性子", Summary: "s", Changes: doc.Chains[0].Intents[0].Changes},
+		{ID: "i3", Title: "分支子", Summary: "s", Parent: "i1", Changes: doc.Chains[0].Intents[0].Changes},
+	}
+	res, err := Build(doc, Options{DisableHighlight: true})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	html := string(res.HTML)
+	if !strings.Contains(html, "3 个意图 · 1 个根 · 1 处分支") {
+		t.Fatalf("显式分支应计入分支数")
+	}
+}
