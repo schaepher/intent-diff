@@ -120,7 +120,10 @@ func (d Document) RepoHead(repoID string) string {
 
 // Intent 是链内的一个阶段。
 type Intent struct {
-	ID                string   `json:"id"`
+	ID string `json:"id"`
+	// Parent 指向父意图，用于“全局意图树”展示（允许分叉）；
+	// 写法：<chain-id>/<intent-id>，或全局唯一的 intent id。不参与链内重放顺序。
+	Parent            string   `json:"parent,omitempty"`
 	Title             string   `json:"title"`
 	Summary           string   `json:"summary"`
 	BusinessRationale string   `json:"business_rationale,omitempty"`

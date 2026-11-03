@@ -14,6 +14,7 @@ type pageData struct {
 	LargeMode    bool
 	TotalLines   int
 	Repos        []repoView
+	Tree         treeView
 	Chains       []chainView
 	ExcludeRules []string
 	Excluded     []scopeView

@@ -14,7 +14,9 @@
 
   var sections = qsa('[data-chain-section]');
   var chainButtons = qsa('.chain-item');
-  var state = { chain: null, intent: null };
+  var treeSection = document.querySelector('[data-tree-section]');
+  var treeButtons = qsa('.tree-item');
+  var state = { chain: null, intent: null, tree: false };
 
   function sectionOf(id) {
     for (var i = 0; i < sections.length; i++) {
@@ -45,7 +47,33 @@
       if (on) btn.setAttribute('aria-current', 'true');
       else btn.removeAttribute('aria-current');
     });
+    if (treeSection) treeSection.hidden = true;
+    treeButtons.forEach(function (btn) {
+      btn.classList.remove('is-active');
+      btn.removeAttribute('aria-current');
+    });
+    state.tree = false;
     state.chain = id;
+    document.body.classList.remove('sidebar-open');
+  }
+
+  // 全局意图树：隐藏所有链，仅显示树；节点链接复用链深链（#chain/intent/1）。
+  function setTree(on) {
+    if (!treeSection || !on) return;
+    sections.forEach(function (sec) { sec.hidden = true; });
+    treeSection.hidden = false;
+    chainButtons.forEach(function (btn) {
+      btn.classList.remove('is-active');
+      btn.removeAttribute('aria-current');
+    });
+    treeButtons.forEach(function (btn) {
+      btn.classList.add('is-active');
+      btn.setAttribute('aria-current', 'true');
+    });
+    state.tree = true;
+    state.chain = null;
+    state.intent = null;
+    window.scrollTo(0, 0);
     document.body.classList.remove('sidebar-open');
   }
 
@@ -146,6 +174,7 @@
   function parseHash() {
     var raw = window.location.hash.replace(/^#/, '');
     if (!raw) return null;
+    if (raw === 'tree') return { tree: true };
     var parts = raw.split('/');
     var change = parts[2] ? parseInt(parts[2], 10) : null;
     return {
@@ -157,6 +186,10 @@
 
   function apply(route, opts) {
     opts = opts || {};
+    if (route && route.tree) {
+      setTree(true);
+      return;
+    }
     if (!route || !sectionOf(route.chain)) route = defaultRoute();
     if (!route) return;
 
@@ -285,6 +318,17 @@
       return;
     }
 
+    var treeBtn = target.closest && target.closest('.tree-item');
+    if (treeBtn) {
+      setTree(true);
+      try {
+        history.pushState({ tree: true }, '', '#tree');
+      } catch (e) {
+        window.location.hash = '#tree';
+      }
+      return;
+    }
+
     var chainBtn = target.closest && target.closest('.chain-item');
     if (chainBtn) {
       var chainId = chainBtn.getAttribute('data-chain');
@@ -343,6 +387,7 @@
   // 暴露最小状态供 e2e 断言（只读，不提供写操作）。
   window.__intentReview = {
     state: state,
-    chains: sections.map(function (sec) { return sec.getAttribute('data-chain-section'); })
+    chains: sections.map(function (sec) { return sec.getAttribute('data-chain-section'); }),
+    tree: !!treeSection
   };
 })();

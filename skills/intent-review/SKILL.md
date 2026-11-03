@@ -38,7 +38,10 @@ description: 把一次代码变更拆成有序意图链，产出 intent-review J
 12. **change 用稳定 id**：每个 change 写 `id`（如 `ch-001`），**修订时保持同一个 id**；
    id 在同一意图内唯一。这样 `diff`/`build` 能准确说明“哪个 change 的解释/分组/代码变了”，
    而不是靠位置猜测。
-13. **分组说明写整体逻辑**：同一 `display_group` 的首个 change 写 `display_group_note`，
+13. **用 parent 组织全局意图树**：同一需求有多个实现分支、或跨链补充时，给意图写
+   `parent`（`<chain-id>/<intent-id>`，避免重名歧义）。树只用于全局阅读，链内重放仍按
+   `changes` 数组顺序；不要让树关系替代/打乱意图顺序。
+14. **分组说明写整体逻辑**：同一 `display_group` 的首个 change 写 `display_group_note`，
    说明这组函数/文件在调用链里的位置；单个函数可以再在自己的 `business_explanation` 里讲细节。
 
 ## 流程
@@ -177,7 +180,7 @@ intent-review validate review.filled.json --repo . --json
 
 | code | 含义 | 修复方向 |
 |---|---|---|
-| `SCHEMA_INVALID` | 结构/类型/必填项错误（含 patch-only 输入） | 补字段；先 `fill` 再 validate |
+| `SCHEMA_INVALID` | 结构/类型/必填项错误（含 patch-only 输入、parent 缺失/重名/自引用/成环） | 补字段；parent 用 `<chain-id>/<intent-id>`；先 `fill` 再 validate |
 | `SCHEMA_VERSION_UNSUPPORTED` | major 版本不匹配 | 用 `1.x` |
 | `MISSING_BUSINESS_EXPLANATION` | 业务解释为空 | 写“为什么” |
 | `DUPLICATE_INTENT_ID` / `DUPLICATE_CHAIN_ID` / `DUPLICATE_REPO_ID` / `DUPLICATE_CHANGE_ID` | id 重复 | 链内/全局/仓库/意图内唯一 |
@@ -228,6 +231,7 @@ intent-review render review.filled.json -o review.html --repo .
 - 新增函数只写“这里实现了 X”，不写它在调用链里的位置/职责——补齐职责说明 + `references`。
 - 多仓时把仓库拼进 `file`（如 `web:src/a.ts`）——用 `repo` + `file`。
 - 为跨仓评审创建合成/临时 Git 仓，或把多个仓的路径硬拼成一个——用 `repos[]` 指真实 checkout。
+- 用 `parent` 把链内顺序“掰直/倒序”——parent 只影响全局树展示，重放顺序仍看 `changes` 数组。
 
 ## 输出
 

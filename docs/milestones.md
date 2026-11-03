@@ -190,6 +190,30 @@ exit=2
 $ go test ./...        # 含 TestFileLinkStaysInsideSourceRoot / TestCleanRelPath / 转义与 CLI 顺序用例
 ```
 
+## M10 全局意图树（允许分叉）
+
+| 验收项 | 证据 |
+|---|---|
+| parent 解析：同链/跨链/全局唯一 id | `TestCheckIntentTreeValid`、`TestCheckIntentTreeMissingAmbiguousSelf` |
+| 缺失/重名/自引用/成环报 `SCHEMA_INVALID` | `TestCheckIntentTreeMissingAmbiguousSelf`、`TestCheckIntentTreeCycle`、`TestCheckStructureIncludesTreeErrors` |
+| 树结构渲染：根/分支/跨链/孤儿/隐藏初始态/深链 | `TestBuildIntentTreeStructure`、`TestBuildIntentTreeOrphanNodes`、`TestTreeHrefEscapesIDs` |
+| 树入口与跳转（点击树、节点跳链、`#tree` 深链） | `make ui-check`：`点击树入口显示全局意图树`、`树视图写入 #tree`、`树节点跳转到对应链意图`、`深链 #tree 直接打开意图树` |
+| 树不参与重放 | 契约：重放仍按 `changes` 数组；`TestCheckIntentTreeValid` 的文档可正常 fill/validate |
+| demo 展示跨链分支 | `examples/demo/review.json` 的 parent：intent-002→001、003→002、audit-001→002 |
+
+### 复现记录（2026-11-02）
+
+```text
+$ bash examples/demo/run.sh
+fill: ok（2 条链，4 个意图）
+validate: {"ok": true, ...}
+
+$ make ui-check
+ui-check: ok (.tmp/demo/out/review.html)
+  # 新增：全局意图树入口、树视图隐藏初始态、点击显示树（#tree）、
+  #       树节点跳转到 c1/i2、#tree 深链直达
+```
+
 ## 复现记录（2026-10-29，本机）
 
 ```text

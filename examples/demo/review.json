@@ -80,7 +80,8 @@
                 " \tw.Write(resp)"
               ]
             }
-          ]
+          ],
+          "parent": "chain-rate-limit/intent-001"
         },
         {
           "id": "intent-003",
@@ -111,7 +112,8 @@
                 "+var cfg = Config{TimeoutSeconds: 3, RateLimitPerSec: 50}"
               ]
             }
-          ]
+          ],
+          "parent": "chain-rate-limit/intent-002"
         }
       ]
     },
@@ -144,7 +146,8 @@
                 "+func (a *Audit) Record(event string) { a.Events = append(a.Events, event) }"
               ]
             }
-          ]
+          ],
+          "parent": "chain-rate-limit/intent-002"
         }
       ]
     }

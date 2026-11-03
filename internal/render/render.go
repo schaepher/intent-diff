@@ -76,6 +76,7 @@ func Build(doc schema.Document, opt Options) (Result, error) {
 		Title:        doc.Meta.Title,
 		LargeMode:    large,
 		TotalLines:   totalLines,
+		Tree:         buildTree(doc),
 		ExcludeRules: opt.ExcludeRules,
 		Excluded:     scopeViews(opt.Excluded),
 		CSS:          template.CSS(styleText),

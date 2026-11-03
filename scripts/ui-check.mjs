@@ -238,6 +238,69 @@ if (fs.existsSync(bin)) {
   check('点击不跳转页面（不启动编辑器）', page.url() === beforeClick, page.url());
   const lineHref = await page.evaluate(() => document.querySelector('.ln-link')?.getAttribute('href') || '');
   check('行号链接定位同一源码根', lineHref.startsWith('vscode://file/') && lineHref.includes('%E6%BA%90%E7%A0%81'), lineHref);
+
+  // 全局意图树：允许分叉、跨链；点树入口显示树，点节点回到对应链意图。
+  const treeChange = (file) => ([{
+    file, location: 'x', business_explanation: '树自检',
+    old_start: 1, new_start: 1,
+    lines: [{ type: 'context', content: 'a' }],
+  }]);
+  const treeDoc = {
+    schema_version: '1.0',
+    meta: { title: '树自检', base_commit: 'deadbeef', head_ref: 'main' },
+    chains: [
+      { id: 'c1', title: '链一', intents: [
+        { id: 'i1', title: '入口', summary: '入口', changes: treeChange('a.go') },
+        { id: 'i2', title: '实现', summary: '实现', parent: 'c1/i1', changes: treeChange('b.go') },
+        { id: 'i3', title: '分支', summary: '分支', parent: 'c1/i1', changes: treeChange('c.go') },
+      ] },
+      { id: 'c2', title: '链二', intents: [
+        { id: 'j1', title: '跨链', summary: '跨链', parent: 'c1/i2', changes: treeChange('d.go') },
+      ] },
+    ],
+  };
+  const treeJson = path.join(dir, 'tree.json');
+  const treeHtml = path.join(dir, 'tree.html');
+  fs.writeFileSync(treeJson, JSON.stringify(treeDoc));
+  execFileSync(bin, ['render', treeJson, '-o', treeHtml]);
+
+  await page.goto(pathToFileURL(treeHtml).href);
+  await page.waitForTimeout(200);
+  const treeInit = await page.evaluate(() => ({
+    button: !!document.querySelector('.tree-item'),
+    sectionHidden: document.querySelector('[data-tree-section]').hidden,
+    activeChain: document.querySelector('[data-chain-section]:not([hidden])')?.getAttribute('data-chain-section'),
+    nodes: document.querySelectorAll('[data-tree-section] .tree-node').length,
+  }));
+  check('存在全局意图树入口', treeInit.button);
+  check('默认仍显示第一条链', treeInit.activeChain === 'c1');
+  check('意图树初始隐藏', treeInit.sectionHidden);
+  check('意图树包含全部意图（含跨链）', treeInit.nodes === 4, String(treeInit.nodes));
+
+  await page.click('.tree-item');
+  await page.waitForTimeout(200);
+  const treeOn = await page.evaluate(() => ({
+    visible: !document.querySelector('[data-tree-section]').hidden,
+    chainsHidden: Array.from(document.querySelectorAll('[data-chain-section]')).every((s) => s.hidden),
+    hash: location.hash,
+    active: document.querySelector('.tree-item').classList.contains('is-active'),
+  }));
+  check('点击树入口显示全局意图树', treeOn.visible && treeOn.chainsHidden && treeOn.active, JSON.stringify(treeOn));
+  check('树视图写入 #tree', treeOn.hash === '#tree', treeOn.hash);
+
+  await page.click('.tree-link[href="#c1/i2/1"]');
+  await page.waitForTimeout(250);
+  const jumped = await page.evaluate(() => ({
+    treeHidden: document.querySelector('[data-tree-section]').hidden,
+    chain: document.querySelector('[data-chain-section]:not([hidden])')?.getAttribute('data-chain-section'),
+    active: document.querySelector('.timeline-node.is-active')?.getAttribute('data-intent'),
+  }));
+  check('树节点跳转到对应链意图', jumped.treeHidden && jumped.chain === 'c1' && jumped.active === 'i2', JSON.stringify(jumped));
+
+  await page.goto(`${pathToFileURL(treeHtml).href}#tree`);
+  await page.waitForTimeout(200);
+  const deepTree = await page.evaluate(() => !document.querySelector('[data-tree-section]').hidden);
+  check('深链 #tree 直接打开意图树', deepTree);
 }
 
 check('无页面 JS 错误', pageErrors.length === 0, pageErrors.join(' | '));

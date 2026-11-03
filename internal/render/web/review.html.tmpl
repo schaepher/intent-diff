@@ -14,6 +14,12 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand">意图评审</div>
     <div class="doc-title">{{.Title}}</div>
+    {{if .Tree.Total}}
+    <button class="tree-item" type="button" data-tree="1">
+      <span class="chain-title">全局意图树</span>
+      <span class="chain-meta">{{.Tree.Total}} 个意图 · {{.Tree.RootsCount}} 个根{{if .Tree.Branches}} · {{.Tree.Branches}} 处分支{{end}}</span>
+    </button>
+    {{end}}
     <nav class="chain-list" aria-label="意图链">
       {{range $ci, $c := .Chains}}
       <button class="chain-item{{if eq $ci 0}} is-active{{end}}" type="button" data-chain="{{$c.ID}}"{{if eq $ci 0}} aria-current="true"{{end}}>
@@ -45,6 +51,17 @@
   </aside>
 
   <main class="main" id="main">
+    {{if .Tree.Total}}
+    <section class="tree-section" id="intent-tree" data-tree-section hidden>
+      <header class="tree-head">
+        <h1 class="tree-title">全局意图树</h1>
+        <p class="tree-sub">从全局看意图之间的关系（允许分叉）；点击节点跳到对应链的意图。重放仍按各链的 changes 顺序。</p>
+      </header>
+      <ul class="tree-roots">
+        {{range .Tree.Roots}}{{template "tree-node" .}}{{end}}
+      </ul>
+    </section>
+    {{end}}
     {{range $ci, $c := .Chains}}
     <section class="chain" data-chain-section="{{$c.ID}}"{{if ne $ci 0}} hidden{{end}}>
       <nav class="intent-timeline" aria-label="意图状态机" data-timeline="{{$c.ID}}">
@@ -160,3 +177,15 @@
 <script>{{.JS}}</script>
 </body>
 </html>
+
+{{define "tree-node"}}
+<li class="tree-node">
+  <div class="tree-card">
+    <a class="tree-link" href="{{.Href}}">{{.Title}}</a>
+    {{if .Orphan}}<span class="tag tag-warn">父意图未找到</span>{{end}}
+    <span class="tree-meta">{{.ChainTitle}} · 意图 {{.Number}}{{if .Repos}} · {{range $i, $r := .Repos}}{{if $i}} / {{end}}{{$r}}{{end}}{{end}} · {{.Changes}} 个 change</span>
+    {{if .Summary}}<p class="tree-summary">{{.Summary}}</p>{{end}}
+  </div>
+  {{if .Children}}<ul class="tree-children">{{range .Children}}{{template "tree-node" .}}{{end}}</ul>{{end}}
+</li>
+{{end}}

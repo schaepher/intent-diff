@@ -86,6 +86,7 @@ const JSONSchema = `{
       "additionalProperties": true,
       "properties": {
         "id": {"type": "string", "minLength": 1},
+        "parent": {"type": "string", "description": "父意图：<chain-id>/<intent-id> 或全局唯一 intent id；仅用于全局意图树展示，不参与重放"},
         "title": {"type": "string", "minLength": 1},
         "summary": {"type": "string", "minLength": 1},
         "business_rationale": {"type": "string"},

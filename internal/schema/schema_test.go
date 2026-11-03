@@ -177,6 +177,12 @@ func TestSchemaJSONValid(t *testing.T) {
 			t.Errorf("schema missing top-level property %q", want)
 		}
 	}
+	intentProps := parsed["definitions"].(map[string]any)["intent"].(map[string]any)["properties"].(map[string]any)
+	for _, want := range []string{"id", "parent", "title", "summary", "changes"} {
+		if _, ok := intentProps[want]; !ok {
+			t.Errorf("schema missing intent property %q", want)
+		}
+	}
 	changeProps := parsed["definitions"].(map[string]any)["change"].(map[string]any)["properties"].(map[string]any)
 	for _, want := range []string{"repo", "file", "location", "business_explanation", "lines", "patch", "new_file", "deleted", "renamed_from", "display_order", "display_group"} {
 		if _, ok := changeProps[want]; !ok {

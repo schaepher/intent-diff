@@ -129,6 +129,34 @@ patch 重放顺序 = `changes` 数组顺序（校验语义）；页面展示顺�
 - 行号定位：文件路径跳到该 change 的起始行（`new_start`）；右列每个行号可点，跳到精确行；
   左列是 State(i-1) 的历史内容，**故意不加**链接，避免误认成本地当前文件。
 
+## 全局意图树（允许分叉）
+
+链内重放必须线性（`changes` 数组顺序），但**意图之间的关系**可以分叉：给意图写 `parent`，
+就能在页面左侧「全局意图树」里从全局阅读整体关系。
+
+```json
+{
+  "chains": [{
+    "id": "chain-x", "title": "需求",
+    "intents": [
+      { "id": "intent-001", "title": "入口", "changes": ["…"] },
+      { "id": "intent-002", "title": "实现 A", "parent": "intent-001", "changes": ["…"] },
+      { "id": "intent-003", "title": "实现 B", "parent": "intent-001", "changes": ["…"] },
+      { "id": "intent-004", "title": "跨链补充", "parent": "chain-y/intent-009", "changes": ["…"] }
+    ]
+  }]
+}
+```
+
+- `parent` 写法：`<chain-id>/<intent-id>`（可跨链），或全局唯一的 `<intent-id>`；
+  缺失/重名/自引用/成环由 `validate` 报 `SCHEMA_INVALID`。
+- 树**只描述阅读关系**，不改变重放：每条链仍按自己的 `changes` 数组顺序推进；
+  分支表示多条实现路径/多个子意图。
+- 侧栏「全局意图树」入口显示根数量与分支数；节点带链标题、意图编号、涉及仓库与 change 数，
+  点击节点跳到对应链的意图（深链仍是 `#<chain>/<intent>/<change>`）。`#tree` 可直接打开树视图。
+- 父意图缺失或成环时，render 把节点挂在根上并标“父意图未找到”（不丢节点、不崩溃）；
+  真正的错误以 `validate` 的诊断为准。
+
 ## 文件过滤（排除列表）
 
 `validate`、`render`/`watch` 的附带校验在做 base→head 覆盖检查前会先过滤路径：
@@ -184,6 +212,7 @@ intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_t
 - 评审范围面板：列出本次生效的排除规则与被跳过的文件，避免更新后测试/文档/依赖文件重新进入评审
 - “继续阅读”引用：`references` 从调用处跳到后面的实现 change 或分组
 - 源码定位：文件路径与右列行号均可点击，`vscode://file/…` 定位到本地当前文件（非历史快照）
+- 全局意图树：侧栏入口，按 `intent.parent` 展示整体关系（允许分叉/跨链），点击节点跳到对应链意图
 
 ## 数据模型（摘要）
 
@@ -217,6 +246,7 @@ intent-review validate review.json --repo . --exclude 'docs/**' --unexclude '*_t
 - 多仓：顶层 `repos[]`（`id/title/path/base_commit/head_ref/source_root`）+ `change.repo`；
   链可跨仓串联，逐仓 base 覆盖用 `chain.base_commits`
 - 稳定标识：`change.id`（修订时保持不变，供 diff/引用定位；意图内唯一）
+- 意图树：`intent.parent`（`<chain-id>/<intent-id>` 或全局唯一 id；允许分叉，不参与重放）
 - 展示：`display_order`（页面顺序，不影响重放）、`display_group` + `display_group_note`（分组与说明）、
   `references`（指向后续实现：`<intent-id>/<change-id>` 或 `<intent-id>#<display_group>`）
 - 统一过滤：顶层 `file_filter.exclude` / `file_filter.unexclude`
@@ -307,7 +337,11 @@ intent-review build review.json --repo .            # → .intent-review/review.
 17. **稳定 change 标识**：`change.id` 可选但**修订时必须保持不变**（意图内唯一，重复报
     `DUPLICATE_CHANGE_ID`）；`revdiff`/`diff` 优先按 id 匹配，否则退回 `(repo,file,location)`。
     页面 `data-change-id` 暴露该标识，`references` 可用它跳转。
-18. **页面评审范围**：`validate` 回传 `exclude_rules` 与 `excluded`（含命中规则），`render`/`build`
+18. **全局意图树只读**：`intent.parent` 只决定树结构，不参与 fill/validate 的重放顺序；
+    解析统一用 `schema.ResolveParent`，校验用 `schema.CheckIntentTree`（缺失/歧义/自引用/环 →
+    `SCHEMA_INVALID`）。render 遇到坏 parent 必须降级为根并标 `Orphan`，不得 panic/丢节点；
+    树入口按钮不要复用 `.chain-item` 类（会被链切换逻辑接管）。
+19. **页面评审范围**：`validate` 回传 `exclude_rules` 与 `excluded`（含命中规则），`render`/`build`
     在侧栏展示；删除文件不生成源码链接，本地缺文件保留链接但标记 `is-missing` 与说明；
     右列行号带精确行跳转，左列（历史状态）不加链接。
 
@@ -315,14 +349,14 @@ intent-review build review.json --repo .            # → .intent-review/review.
 
 ```
 cmd/intent-review/     CLI 入口（validate/fill/render/schema/watch）
-internal/schema        结构体、JSON Schema、版本与结构校验
+internal/schema        结构体、JSON Schema、版本/结构/意图树校验
 internal/replay        git base/head 读取、多仓引擎路由、逐意图状态重放（fill 与 validate 共用）
 internal/filefilter    覆盖检查的排除列表（内置 *_test.go 等）+ .intent-review.json 读取
 internal/diffpatch     unified diff（单 hunk）解析
 internal/fill          patch 填充、行号回填、JSON 树合并（保留未知字段）
 internal/validate      链条重放校验、最终状态比对、结构化错误
 internal/report        错误码/诊断/退出码
-internal/render        HTML 模板、两列对齐、诊断上浮（go:embed 内联资源）
+internal/render        HTML 模板、全局意图树、两列对齐、诊断上浮（go:embed 内联资源）
 internal/highlight     chroma 封装（整列高亮后切行，跨行语法状态正确）
 internal/revdiff       两版材料的意图级差异（文件顺序/函数分组/解释内容）
 examples/demo          端到端 demo（脚本 + 两提交 fixture + 骨架 JSON）
@@ -353,6 +387,7 @@ PLAYWRIGHT_CHANNEL=chrome make ui-check
 - 依赖 git 读取 base/head 内容（`--repo` 必须指向包含这些提交的仓库）
 - 一行一个 `<tr>`，超大文件（数万行）会有明显 DOM 体积；靠 `--max-lines` 折叠缓解
 - 不支持链内分支/合并：并行需求建两条独立链
+- 意图树只是阅读视图：不支持按树做重放/校验（重放始终是各链线性顺序）
 - 跨仓只支持本地 checkout + git（`repos[].path` 相对项目根；不负责 clone/fetch）
 - `watch` 只监听输入 JSON：改配置、源码或 `--repo` 内提交后需手动重跑
 - 不做评论/导出/GitHub 同步（第一版只读）

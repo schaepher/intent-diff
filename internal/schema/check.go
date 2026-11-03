@@ -60,6 +60,7 @@ func CheckStructure(doc Document) []report.Error {
 			checkIntent(doc, c, &c.Intents[ii], ii, seenIntents, add)
 		}
 	}
+	errs = append(errs, CheckIntentTree(doc)...)
 	return errs
 }
 

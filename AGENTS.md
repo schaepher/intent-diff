@@ -104,7 +104,11 @@ scripts/                verify.sh / check-file-size.sh / ui-check.mjs
     别把守卫放宽成任意路径（agent 会传 `--out-dir .`）。
 21. **稳定 change 标识**：`change.id` 可选但修订时必须不变，意图内唯一（`DUPLICATE_CHANGE_ID`）；
     `references` 解析不到目标时渲染成纯文本，不要编造锚点；深链/`change_index` 仍是声明下标。
-22. **评审范围回传契约**：`validate.Result.ExcludeRules/Excluded` 是页面“评审范围”面板的唯一数据源
+22. **全局意图树只读**：`intent.parent`（`<chain-id>/<intent-id>` 或全局唯一 id）只决定树结构，
+    重放仍按链内 `changes` 数组顺序。解析统一 `schema.ResolveParent`、校验 `schema.CheckIntentTree`
+    （缺失/歧义/自引用/环 → `SCHEMA_INVALID`）；render 遇到坏 parent 降级为根并标 `Orphan`，
+    不 panic/不丢节点。树入口按钮不要加 `.chain-item` 类（会被链切换逻辑接管）。
+23. **评审范围回传契约**：`validate.Result.ExcludeRules/Excluded` 是页面“评审范围”面板的唯一数据源
     （`Excluded.Rule` 来自 `filefilter.MatchReason`）；repo 按声明顺序、路径排序保证确定性。
     渲染层只读展示，不得据此改变重放/覆盖语义。
 
@@ -187,6 +191,7 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
 | `internal/validate` 的 `ExcludeRules/Excluded`（评审范围回传） | `render/checklist_test.go` 的 scope 面板、`multirepo_test.go`、`validate --json` 契约、README「文件过滤」 |
 | `cmd/intent-review/build_cmd.go`（build/clean 入口） | build CLI 测试、`main.go` help、README「更新与反馈」「评审产物不入库」、AGENTS 契约 20 |
 | `internal/render`（分组标题/引用/行号链接/scope） | `render/checklist_test.go`、模板与 CSS、ui-check（自包含断言） |
+| `internal/schema/tree.go` + `internal/render/tree.go`（全局意图树） | `schema/tree_test.go`、`render/tree_test.go`、ui-check 树入口/跳转、README/SKILL 说明 |
 | `internal/render/link.go` + `internal/schema/path.go`（源码链接路径范围/转义） | `render/link_test.go`、`schema/path_test.go`、`ui-check` 的链接点击用例（`vscode://file/`、URI 编码、防注入） |
 | `scripts/ui-check.mjs`（浏览器自检/`PLAYWRIGHT_CHANNEL`） | 链接点击与编码断言、README「验证」、AGENTS 契约 18 |
 | CLI 参数/子命令 | `parseFlagSet`（flag 与位置参数可交错）、help 文本、CLI 测试的退出码 |
@@ -218,6 +223,10 @@ codeintel query impact  '<canonical-id>'         # 深度 3 影响面
   “build 通过、validate 失败”的分叉。校验失败也要写页面（页面是发现问题的地方）。
 - **`clean` 的白名单不能放宽**：只删 `.intent-review` 或含 `review.filled.json`/`review.html` 的目录；
   agent 传 `--out-dir .` 时必须拒绝。
+- **意图树解析只允许一套**：schema 校验与 render 构建都走 `ResolveParent`；各写一套会出现
+  “validate 说没问题、页面却挂错根”。
+- **树入口别复用 `.chain-item`**：app.js 的链切换按 `.chain-item` 事件接管，树按钮必须用
+  `.tree-item` 独立处理；树节点跳转用普通 `<a href="#chain/intent/1">`，别套 `.node-btn` 事件。
 - **页面 scope 断言别查 CSS 类名**：`scope-summary` 等类名在 CSS 里也有，断言要查
   `<details class="scope">` / `<code>…</code>` 这类真实标记。
 - **源码链接要两次校验**：`change.file` 在 schema 阶段拒绝绝对路径/`..`，`render` 侧再确认
