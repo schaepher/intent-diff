@@ -174,7 +174,8 @@ func TestBuildWarningsFloatToIntent(t *testing.T) {
 	if len(res.Warnings) != 1 {
 		t.Fatalf("warnings = %+v", res.Warnings)
 	}
-	idx := strings.Index(html, `data-intent="intent-002"`)
+	// 意图树在状态机之前渲染，同样带 data-intent；取最后一个才是 timeline 节点。
+	idx := strings.LastIndex(html, `data-intent="intent-002"`)
 	if idx < 0 {
 		t.Fatalf("intent node missing")
 	}

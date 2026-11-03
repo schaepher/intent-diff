@@ -641,6 +641,12 @@ table.diff {
 .tree-children > .tree-node:first-child::after { left: 50%; }
 .tree-children > .tree-node:last-child::after { right: 50%; }
 .tree-children > .tree-node:only-child::after { display: none; }
+.tree-root-card {
+  width: 340px;
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+.tree-root-title { display: block; font-size: 16px; font-weight: 700; color: #312e81; }
 .tree-card {
   width: 280px;
   box-sizing: border-box;

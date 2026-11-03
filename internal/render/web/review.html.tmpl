@@ -17,7 +17,7 @@
     {{if .Tree.Total}}
     <button class="tree-item" type="button" data-tree="1">
       <span class="chain-title">全局意图树</span>
-      <span class="chain-meta">{{.Tree.Total}} 个意图 · {{.Tree.RootsCount}} 个根{{if .Tree.Branches}} · {{.Tree.Branches}} 处分支{{end}}</span>
+      <span class="chain-meta">{{.Tree.Total}} 个意图 · {{.Tree.ChainCount}} 条链{{if .Tree.Branches}} · {{.Tree.Branches}} 处分支{{end}}</span>
     </button>
     {{end}}
     <nav class="chain-list" aria-label="意图链">
@@ -59,7 +59,7 @@
       </header>
       <div class="tree-canvas">
         <ul class="tree-roots">
-          {{range .Tree.Roots}}{{template "tree-node" .}}{{end}}
+          {{template "tree-node" .Tree.Root}}
         </ul>
       </div>
     </section>
@@ -181,11 +181,15 @@
 </html>
 
 {{define "tree-node"}}
-<li class="tree-node">
-  <div class="tree-card">
-    <a class="tree-link" href="{{.Href}}">{{.Title}}</a>
+<li class="tree-node{{if .Synthetic}} tree-root-node{{end}}" data-tree-node="1"{{if .Synthetic}} data-tree-synthetic="1"{{end}}{{if .IntentID}} data-intent="{{.IntentID}}"{{end}}>
+  <div class="tree-card{{if .Synthetic}} tree-root-card{{end}}">
+    {{if .Href}}<a class="tree-link" href="{{.Href}}">{{.Title}}</a>{{else}}<span class="tree-root-title">{{.Title}}</span>{{end}}
     {{if .Orphan}}<span class="tag tag-warn">父意图未找到</span>{{end}}
+    {{if .Synthetic}}
+    <span class="tree-meta">{{.Meta}}</span>
+    {{else}}
     <span class="tree-meta">{{.ChainTitle}} · 意图 {{.Number}}{{if .Repos}} · {{range $i, $r := .Repos}}{{if $i}} / {{end}}{{$r}}{{end}}{{end}} · {{.Changes}} 个 change</span>
+    {{end}}
     {{if .Summary}}<p class="tree-summary">{{.Summary}}</p>{{end}}
   </div>
   {{if .Children}}<ul class="tree-children">{{range .Children}}{{template "tree-node" .}}{{end}}</ul>{{end}}

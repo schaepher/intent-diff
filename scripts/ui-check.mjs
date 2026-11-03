@@ -270,12 +270,15 @@ if (fs.existsSync(bin)) {
     button: !!document.querySelector('.tree-item'),
     sectionHidden: document.querySelector('[data-tree-section]').hidden,
     activeChain: document.querySelector('[data-chain-section]:not([hidden])')?.getAttribute('data-chain-section'),
-    nodes: document.querySelectorAll('[data-tree-section] .tree-node').length,
+    nodes: document.querySelectorAll('[data-tree-section] [data-tree-node]').length,
+    synthetic: !!document.querySelector('[data-tree-section] [data-tree-synthetic]'),
+    firstNodeIsRoot: !!document.querySelector('[data-tree-section] [data-tree-node]:first-child[data-tree-synthetic]'),
   }));
   check('存在全局意图树入口', treeInit.button);
   check('默认仍显示第一条链', treeInit.activeChain === 'c1');
   check('意图树初始隐藏', treeInit.sectionHidden);
-  check('意图树包含全部意图（含跨链）', treeInit.nodes === 4, String(treeInit.nodes));
+  check('意图树包含固定根 + 全部意图（含跨链）', treeInit.nodes === 5 && treeInit.synthetic, String(treeInit.nodes));
+  check('固定根节点在最顶部', treeInit.firstNodeIsRoot);
 
   await page.click('.tree-item');
   await page.waitForTimeout(200);

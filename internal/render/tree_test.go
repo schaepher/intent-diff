@@ -38,7 +38,7 @@ func TestBuildIntentTreeStructure(t *testing.T) {
 	}
 	html := string(res.HTML)
 	for _, want := range []string{
-		`data-tree="1"`, "全局意图树", "4 个意图 · 1 个根 · 1 处分支",
+		`data-tree="1"`, "全局意图树", "4 个意图 · 2 条链 · 1 处分支",
 		`<section class="tree-section" id="intent-tree" data-tree-section hidden>`,
 		`class="tree-canvas"`, "自上而下",
 	} {
@@ -46,12 +46,17 @@ func TestBuildIntentTreeStructure(t *testing.T) {
 			t.Fatalf("缺少 %q", want)
 		}
 	}
-	if n := strings.Count(html, `class="tree-node"`); n != 4 {
-		t.Fatalf("tree-node 数量 = %d, want 4", n)
+	// 顶部固定项目根 + 4 个真实意图节点。
+	if n := strings.Count(html, `data-tree-node="1"`); n != 5 {
+		t.Fatalf("data-tree-node 数量 = %d, want 5", n)
+	}
+	if !strings.Contains(html, `data-tree-synthetic="1"`) || !strings.Contains(html, ">树<") {
+		t.Fatalf("缺少顶部固定根节点（meta.title）")
 	}
 	// i1 有 2 个孩子；i2 有 1 个跨链孩子 → 两个 tree-children 列表。
-	if n := strings.Count(html, `<ul class="tree-children">`); n != 2 {
-		t.Fatalf("tree-children 列表 = %d, want 2", n)
+	// 项目根 → i1 的 children；i1 → {i2,i3}；i2 → j1。
+	if n := strings.Count(html, `<ul class="tree-children">`); n != 3 {
+		t.Fatalf("tree-children 列表 = %d, want 3", n)
 	}
 	for _, want := range []string{`href="#c1/i1/1"`, `href="#c1/i2/1"`, `href="#c2/j1/1"`} {
 		if !strings.Contains(html, want) {
@@ -86,8 +91,8 @@ func TestBuildIntentTreeOrphanNodes(t *testing.T) {
 	if !strings.Contains(html, "父意图未找到") {
 		t.Fatalf("未标记缺失父意图")
 	}
-	if !strings.Contains(html, "5 个意图 · 2 个根") {
-		t.Fatalf("根数量应包含孤儿节点")
+	if !strings.Contains(html, "5 个意图 · 2 条链") {
+		t.Fatalf("统计行应包含链数")
 	}
 }
 
@@ -114,12 +119,12 @@ func TestBuildImplicitLinearTree(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	html := string(res.HTML)
-	if !strings.Contains(html, "5 个意图 · 2 个根") {
-		t.Fatalf("每链首意图应为根: %s", "5 个意图 · 2 个根")
+	if !strings.Contains(html, "5 个意图 · 2 条链") {
+		t.Fatalf("统计行应包含链数")
 	}
-	// i1→i2→i3→i4（3 个 children 列表）+ j1 无子节点 → 3 个嵌套列表。
-	if n := strings.Count(html, `<ul class="tree-children">`); n != 3 {
-		t.Fatalf("隐式线性树嵌套列表 = %d, want 3", n)
+	// 项目根 + i1→i2→i3→i4 + j1 无子节点 → 4 个嵌套列表。
+	if n := strings.Count(html, `<ul class="tree-children">`); n != 4 {
+		t.Fatalf("隐式线性树嵌套列表 = %d, want 4", n)
 	}
 }
 
@@ -137,7 +142,7 @@ func TestBuildImplicitAndExplicitBranch(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	html := string(res.HTML)
-	if !strings.Contains(html, "3 个意图 · 1 个根 · 1 处分支") {
+	if !strings.Contains(html, "3 个意图 · 1 条链 · 1 处分支") {
 		t.Fatalf("显式分支应计入分支数")
 	}
 }

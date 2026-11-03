@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -11,9 +12,10 @@ import (
 // treeView 是“全局意图树”：按 intent.parent 组织的森林（允许分叉）。
 // 它只用于全局阅读意图关系，不参与链内重放（重放仍是 changes 数组顺序）。
 type treeView struct {
-	Roots      []treeNodeView
+	// Root 是固定在顶部的项目根节点（meta.title），所有链的根意图挂在它下面。
+	Root       treeNodeView
 	Total      int
-	RootsCount int
+	ChainCount int
 	Branches   int
 }
 
@@ -28,7 +30,11 @@ type treeNodeView struct {
 	Repos      []string
 	Href       string
 	Orphan     bool
-	Children   []treeNodeView
+	// Synthetic 表示项目根节点（不指向具体意图，只用于把多条链收拢成一棵树）。
+	Synthetic bool
+	// Meta 是项目根节点上的统计行（链数/意图数/分支数）。
+	Meta     string
+	Children []treeNodeView
 }
 
 type treeNode struct {
@@ -103,23 +109,39 @@ func buildTree(doc schema.Document) treeView {
 		return v
 	}
 
-	tv := treeView{Total: len(order)}
+	tv := treeView{Total: len(order), ChainCount: len(doc.Chains)}
+	var realRoots []treeNodeView
 	for _, key := range roots {
 		if !visited[key] {
-			tv.Roots = append(tv.Roots, walk(key, false))
+			realRoots = append(realRoots, walk(key, false))
 		}
 	}
 	// 环内节点从根不可达：仍展示出来（标 Orphan），避免页面无声丢意图。
 	for _, key := range order {
 		if !visited[key] {
-			tv.Roots = append(tv.Roots, walk(key, true))
+			realRoots = append(realRoots, walk(key, true))
 		}
 	}
-	tv.RootsCount = len(tv.Roots)
 	for _, kids := range children {
 		if len(kids) > 1 {
 			tv.Branches++
 		}
+	}
+	// 顶部固定一个项目根节点：多链/多根都收拢到它下面，页面始终只有一棵树。
+	title := strings.TrimSpace(doc.Meta.Title)
+	if title == "" {
+		title = "本次评审"
+	}
+	meta := fmt.Sprintf("%d 条链 · %d 个意图", len(doc.Chains), tv.Total)
+	if tv.Branches > 0 {
+		meta += fmt.Sprintf(" · %d 处分支", tv.Branches)
+	}
+	tv.Root = treeNodeView{
+		Title:     title,
+		Synthetic: true,
+		Meta:      meta,
+		Summary:   "本轮评审的全局意图关系（自上而下阅读）",
+		Children:  realRoots,
 	}
 	return tv
 }
